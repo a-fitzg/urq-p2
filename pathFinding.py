@@ -55,8 +55,8 @@ def cone_pair_midpoint(point1, point2):
     @return : New Point object, at the midpoint
     """
 
-    xval = (point1.get_x + point2.get_x) / 2
-    yval = (point1.get_y + point2.get_y) / 2
+    xval = (point1.get_x() + point2.get_x()) / 2
+    yval = (point1.get_y() + point2.get_y()) / 2
     retpoint = Point(xval, yval)
 
     return retpoint
@@ -74,18 +74,59 @@ def get_point_pairs(listx, listy, colours):
     @return : Dictionary with indices as keys, and Point tuples as entries
     """
 
-
     # In the ordered list, the first point is the start cones
+    # Dict: {index: (point1, point2)}
     cones = {0: (Point(listx[0], listy[0]), Point(listx[1], listy[1]))}
-    print(cones)
 
-    dictIndex = 0
-    # Iterate through the list of ponits
-    for i in range(1, len(listx)):
-        cones[i] = {i: (Point(listx[i], listy[i]), Point(listx[i + 1], listy[i + 1]))}
-        pass
+    # Iterate through the list of points, assigning all subsequent pairs of points into a tuple
+    for i in range(1, (len(listx) // 2)):
+        cones[i] = (Point(listx[i * 2], listy[i * 2]), \
+                    Point(listx[(i * 2) + 1], listy[(i * 2) + 1]))
 
     return cones
+
+
+def get_track_midpoints(points):
+    """
+    Get a list of midpoints, with their index, in a dictionary
+    @param points : Dictionary containing point pairs with indices
+    @type points  : Dictionary := {index: (Point, Point)}
+
+    @return       : Dictionary containing midpoints with indices
+    """
+
+    # Our dictionary of midpoints, empty for now
+    mids = {}
+
+    # Iterate through the cones dict, calculating the midpoint of each one, then putting it in a
+    # new dictionary, mapping index to Point (midpoint)
+    for i in points:
+        mids[i] = cone_pair_midpoint(points.get(i)[0], points.get(i)[1])
+
+    # We might also add a point back at the start line to form a complete circuit
+    mids[len(points)] = mids[0]
+
+    return mids
+
+
+def get_point_list(points):
+    """
+    Returns a tuple containing a list of x coordinates and a list of y coordinates from a cone
+    dictionary
+
+    @param points   : Dictionary mapping point indices to Point objects
+    @return         : Tuple containing list of x coordinates, and list of y coordinates
+    """
+
+    xList = []
+    yList = []
+
+    for i in points:
+        xList.append(points.get(i).get_x())
+        yList.append(points.get(i).get_y())
+
+    return xList, yList
+
 
 def task1():
     """ Task 1 """
@@ -94,12 +135,17 @@ def task1():
     cones = get_point_pairs(CX1, CY1, CC1)
 
     # Store all the midpoints as dictionary entries, with its index as a key
-    midpoints = {}
+    midpoints = get_track_midpoints(cones)
 
-    # Go through all the point pairs in the track
-    for i in range(len(CX1)):
+    (xList, yList) = get_point_list(midpoints)
 
-        pass
+    # Plot out existing tracks
+    plt.scatter(CX1, CY1, c=CC1)
+
+    # Plot our midpoints
+    plt.plot(xList, yList, '-o')
+    plt.axis('equal')
+    plt.show()
 
 ##------------------------------------------------------------------------------
 
@@ -108,8 +154,5 @@ if __name__ == '__main__':
 
     task1()
 
-    plt.scatter(CX1, CY1, c=CC1)
-    plt.axis('equal')
-    plt.show()
 
 # -------------------------------------------------------------------------------

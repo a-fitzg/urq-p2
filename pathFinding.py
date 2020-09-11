@@ -53,6 +53,41 @@ class Point:
         return self.colour
 
 
+def get_points_mean(points):
+    """
+    Get the middle point of a set of points
+
+    @param points: List of points
+    @return: Point: Middle point of all points (simple mean)
+    """
+    sum_x = 0
+    sum_y = 0
+    i = 0
+    for i in range(len(points)):
+        sum_x += points[i].get_x()
+        sum_y += points[i].get_y()
+
+    ret_point = Point((sum_x / (i + 1)), (sum_y / (i + 1)))
+
+    return ret_point
+
+
+def parse_points(list_x, list_y, list_colours):
+    """
+    Translate coordinates list to list of Points
+
+    @param list_x: List of x coordinates
+    @param list_y: List of y coordinates
+    @param list_colours: List of colours for each point
+    @return: List of points
+    """
+    points = []
+    for i in range(len(list_x)):
+        points.append(Point(list_x[i], list_y[i], list_colours[i]))
+
+    return points
+
+
 def cone_pair_midpoint(point1, point2):
     """
     Function to calculate the midpoint between two points.
@@ -72,17 +107,37 @@ def cone_pair_midpoint(point1, point2):
 
 def sort_points(listx, listy, colours):
     """
-    Given a list of x coords, y coords, and colours, sort the points and
+    Given a list of x coords, y coords, and colours, sort the points
+    ASSUMING THE TRACK IS CLOCKWISE, AND WE MAKE AN ANTI-CLOCKWISE PATH
 
-    :param listx   : List of points' x coordinates
-    :param listy   : List of points' y coordinates
-    :param colours : List of points' colours
+    @param listx   : List of points' x coordinates
+    @param listy   : List of points' y coordinates
+    @param colours : List of points' colours
 
-    :return : (sorted_x, sorted_y, sorted_colours):
+    @return : (sorted_x, sorted_y, sorted_colours):
                 sorted_x : Sorted x coordinates
                 sorted_y : Sorted y coordinates
                 sorted_colours : Sorted colours
     """
+
+    points = parse_points(listx, listy, colours)
+    centre_point = get_points_mean(points)
+    start_points = []
+
+    # First, find the 2 start points, they are of colour 0
+    for i in points:
+        if i.get_colour() == 0:
+            start_points.append(i)
+
+    # If we don't have 2 start cones, we can't have a valid start point. Quit
+    if len(start_points) != 2:
+        return
+
+    sorted_points_pair = {0 : (start_points[0], start_points[1])}
+
+    # Now, we go around anti-clockwise and find a path for one side of the cones,
+    # we will look for cones with colour 1
+
 
     sorted_listx = []
     sorted_listy = []
@@ -179,7 +234,8 @@ def task1():
 
 def task2():
     """ Task 2 """
-    #pt = Point(1, 1, "RED")
+    sorted_points = sort_points(CX2, CY2, CC2)
+
 
     #cones = get_point_pairs(CX2, CY2, CC2)
 
@@ -187,6 +243,7 @@ def task2():
 
     #plt.scatter(xlist, ylist, c=colourlist)
     plt.scatter(CX2, CY2, c=CC2)
+    plt.scatter(centre_point.get_x(), centre_point.get_y())
     plt.axis('equal')
     plt.show()
 

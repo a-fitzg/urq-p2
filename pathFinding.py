@@ -32,17 +32,25 @@ class Point:
 
     @param x : x coordinate of point
     @param y : y coordinate of point
+    @param colour : OPTIONAL - colour of point
 
     """
-    def __init__(self, x, y):
+    def __init__(self, x, y, *args, **kwargs):
         self.x = x
         self.y = y
+
+        # We might also pass in a colour parameter, this is optional and is not a normal argument
+        if len(args) != 0:
+            self.colour = args[0]
 
     def get_x(self):
         return self.x
 
     def get_y(self):
         return self.y
+
+    def get_colour(self):
+        return self.colour
 
 
 def cone_pair_midpoint(point1, point2):
@@ -62,6 +70,25 @@ def cone_pair_midpoint(point1, point2):
     return retpoint
 
 
+def sort_points(listx, listy, colours):
+    """
+    Given a list of x coords, y coords, and colours, sort the points and
+
+    :param listx   : List of points' x coordinates
+    :param listy   : List of points' y coordinates
+    :param colours : List of points' colours
+
+    :return : (sorted_x, sorted_y, sorted_colours):
+                sorted_x : Sorted x coordinates
+                sorted_y : Sorted y coordinates
+                sorted_colours : Sorted colours
+    """
+
+    sorted_listx = []
+    sorted_listy = []
+    sorted_colours = []
+
+
 def get_point_pairs(listx, listy, colours):
     """
     Populates a dictionary with Point pairs, with an order
@@ -76,12 +103,12 @@ def get_point_pairs(listx, listy, colours):
 
     # In the ordered list, the first point is the start cones
     # Dict: {index: (point1, point2)}
-    cones = {0: (Point(listx[0], listy[0]), Point(listx[1], listy[1]))}
+    cones = {0: (Point(listx[0], listy[0], 0), Point(listx[1], listy[1], 0))}
 
     # Iterate through the list of points, assigning all subsequent pairs of points into a tuple
     for i in range(1, (len(listx) // 2)):
-        cones[i] = (Point(listx[i * 2], listy[i * 2]), \
-                    Point(listx[(i * 2) + 1], listy[(i * 2) + 1]))
+        cones[i] = (Point(listx[i * 2], listy[i * 2], colours[i * 2]), \
+                    Point(listx[(i * 2) + 1], listy[(i * 2) + 1], colours[(i * 2) + 1]))
 
     return cones
 
@@ -115,17 +142,19 @@ def get_point_list(points):
     dictionary
 
     @param points   : Dictionary mapping point indices to Point objects
-    @return         : Tuple containing list of x coordinates, and list of y coordinates
+    @return         : Tuple containing list of x coordinates, list of y coordinates, and list of colours
     """
 
     xList = []
     yList = []
+    colourList = []
 
     for i in points:
         xList.append(points.get(i).get_x())
         yList.append(points.get(i).get_y())
+        colourList.append(points.get(i).get_colour())
 
-    return xList, yList
+    return xList, yList, colourList
 
 
 def task1():
@@ -147,12 +176,27 @@ def task1():
     plt.axis('equal')
     plt.show()
 
+
+def task2():
+    """ Task 2 """
+    #pt = Point(1, 1, "RED")
+
+    #cones = get_point_pairs(CX2, CY2, CC2)
+
+    #(xlist, ylist, colourlist) = get_point_list(cones)
+
+    #plt.scatter(xlist, ylist, c=colourlist)
+    plt.scatter(CX2, CY2, c=CC2)
+    plt.axis('equal')
+    plt.show()
+
 ##------------------------------------------------------------------------------
 
 
 if __name__ == '__main__':
 
-    task1()
+    #task1()
+    task2()
 
 
 # -------------------------------------------------------------------------------

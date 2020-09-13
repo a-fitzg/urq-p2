@@ -27,6 +27,78 @@ CC2 = [1, 1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 0, 2, 1, 0, 1, 1, 2, 2, 1]
 
 ##------------------------------- My code  ------------------------------
 
+# Constants
+TURN_START = 0
+TURN_STOP = 1
+
+
+class Event:
+    """
+    Class for representing an event that happens on the track
+
+    @param type : Event Type
+    @param time : Event time (along linspace)
+    """
+    def __init__(self, type, time=None, location=None):
+
+        self.type = type
+
+        if time is not None:
+            self.time = time
+
+        if location is not None:
+            self.location = location
+
+
+class RacingCurve:
+    """
+    Class representing a curve on a track (typically taken by a vehicle)
+
+    @param start : Point: start point
+
+    @param inner_bounds : List of Points - Track's inner bounds (OPTIONAL)
+    @param outer_bounds : List of Points - Track's outer bounds (OPTIONAL)
+    @param ls : Linspace - Linear space for indexing/parametrising curve (OPTIONAL)
+    @param end_time : End time (in linspace) of the track (OPTIONAL)
+    @param events : List of Event objects (OPTIONAL)
+    """
+    def __init__(self, start, inner_bounds=None, outer_bounds=None, ls=None, end_time=None, events=None):
+        self.start = start
+
+        self.direction = 0
+        self.speed = 0
+        self.end = 0
+
+        # {t: (Point, direction, speed)}
+        self.path = {}
+
+        # OPTIONAL VALUES
+        if inner_bounds is not None:
+            self.inner_bounds = inner_bounds
+        else:
+            self.inner_bounds = 0
+
+        if outer_bounds is not None:
+            self.outer_bounds = outer_bounds
+        else:
+            self.outer_bounds = 0
+
+        if ls is not None:
+            self.ls = ls
+        else:
+            self.ls = np.linspace(0, )
+
+        if end_time is not None:
+            self.end_time = end_time
+        else:
+            self.step_size = 0
+
+        if events is not None:
+            self.events = events
+        else:
+            self.events = 0
+
+
 class Point:
     """
     Class representing a point on the track
@@ -269,12 +341,6 @@ def sort_points(listx, listy, colours):
             dummy_yellow.append(i)
 
     for i in range(len(dummy_blue)):
-
-        #plt.scatter(CX1, CY1, c=CC1)
-        #plt.plot([dummy_blue[i].get_x(), dummy_yellow[i].get_x()], [dummy_blue[i].get_y(), dummy_yellow[i].get_y()], '-o')
-        #plt.axis('square')
-        #plt.show()
-
         sorted_points_pair[i + 1] = (dummy_blue[i], dummy_yellow[i])
 
     sorted_listx = []
@@ -312,7 +378,7 @@ def get_point_pairs(listx, listy, colours):
 
     # Iterate through the list of points, assigning all subsequent pairs of points into a tuple
     for i in range(1, (len(listx) // 2)):
-        cones[i] = (Point(listx[i * 2], listy[i * 2], colours[i * 2]), \
+        cones[i] = (Point(listx[i * 2], listy[i * 2], colours[i * 2]),
                     Point(listx[(i * 2) + 1], listy[(i * 2) + 1], colours[(i * 2) + 1]))
 
     return cones
@@ -384,6 +450,7 @@ def task1():
 
 def task2():
     """ Task 2 """
+
     (xlist, ylist, colourlist) = sort_points(CX2, CY2, CC2)
 
     cones = get_point_pairs(xlist, ylist, colourlist)
@@ -401,10 +468,22 @@ def task2():
 ##------------------------------------------------------------------------------
 
 
+def curve():
+    """ "Racing curve" extension task"""
+
+
+    x = np.linspace(0, 2*np.pi, 100)
+    #fig = plt.figure()
+    plt.polar(x, np.sin(x))
+    plt.scatter(CX1, CY1, c=CC1)
+    plt.show()
+
+
 if __name__ == '__main__':
 
-    task1()
-    task2()
+    #task1()
+    #task2()
+    curve()
 
 
 # -------------------------------------------------------------------------------

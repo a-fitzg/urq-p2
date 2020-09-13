@@ -8,6 +8,7 @@
 ##------------------------------Import Statements-------------------------------
 import numpy as np
 import math
+import cmath
 import matplotlib.pyplot as plt
 
 ##------------------------------------------------------------------------------
@@ -30,18 +31,19 @@ class Point:
     """
     Class representing a point on the track
 
-    @param x : x coordinate of point
-    @param y : y coordinate of point
+    @param x      : x coordinate of point
+    @param y      : y coordinate of point
     @param colour : OPTIONAL - colour of point
 
     """
-    def __init__(self, x, y, *args, **kwargs):
+    def __init__(self, x, y, colour=None):
         self.x = x
         self.y = y
+        self.colour = colour
 
-        # We might also pass in a colour parameter, this is optional and is not a normal argument
-        if len(args) != 0:
-            self.colour = args[0]
+        # We might also pass in a colour parameter. This is optional, and we need to check if it has been given
+        if colour is not None:
+            self.colour = colour
 
     def get_x(self):
         return self.x
@@ -52,12 +54,22 @@ class Point:
     def get_colour(self):
         return self.colour
 
+    def compare_to(self, other):
+        """
+        Compares this point to another point, return true if it is at the same location, false otherwise
+
+        @param other : Other Point
+        @return : True if same location as other point, false otherwise
+        """
+        return True if ((other.get_x() == self.get_x()) and (other.get_y() == self.get_y())) else False
+
 
 def get_points_mean(points):
     """
     Get the middle point of a set of points
 
-    @param points: List of points
+    @param points : List of points
+
     @return: Point: Middle point of all points (simple mean)
     """
     sum_x = 0
@@ -67,6 +79,7 @@ def get_points_mean(points):
         sum_x += points[i].get_x()
         sum_y += points[i].get_y()
 
+    # Simple arithmetic mean of x and y coordinates
     ret_point = Point((sum_x / (i + 1)), (sum_y / (i + 1)))
 
     return ret_point
@@ -76,9 +89,10 @@ def parse_points(list_x, list_y, list_colours):
     """
     Translate coordinates list to list of Points
 
-    @param list_x: List of x coordinates
-    @param list_y: List of y coordinates
-    @param list_colours: List of colours for each point
+    @param list_x       : List of x coordinates
+    @param list_y       : List of y coordinates
+    @param list_colours : List of colours for each point
+
     @return: List of points
     """
     points = []
@@ -88,6 +102,62 @@ def parse_points(list_x, list_y, list_colours):
     return points
 
 
+def find_distance(origin, dest):
+    """
+    Find the (Euclidean) distance between 2 Points
+
+    @param origin : Origin point (reference)
+    @param dest   : Point to find distance to
+
+    @return : Euclidean distance to point
+    """
+    x = abs(origin.get_x() - dest.get_x())
+    y = abs(origin.get_y() - dest.get_y())
+    return math.sqrt(math.pow(x, 2) + math.pow(y, 2))
+
+
+def find_closest(origin, points):
+    """
+    Find the Point that is closest to a given Point
+
+    @param origin : Origin (reference) point
+    @param points : List of Points
+
+    @return : Point: whichever point is closest
+    """
+    closest = 0
+    closest_distance = -1
+    for i in points:
+        # First run-through of the loop, closest is this current point
+        if closest_distance == -1:
+            closest = i
+            closest_distance = find_distance(origin, i)
+        # Check if we found a closer point
+        elif (find_distance(origin, i)) < closest_distance:
+            closest = i
+
+    return closest
+
+
+def find_angle(origin, dest):
+    """
+    Find the angle from an origin to a destination point (in degrees). Results from 0 - 360
+
+    @param origin : Origin point (reference)
+    @param dest   : Destination point to measure to
+
+    @return : Angle to destination point (from +x axis)
+    """
+    x = dest.get_x() - origin.get_x()
+    y = dest.get_y() - origin.get_y()
+
+    result = math.atan2(y, x)
+    if result < 0:
+        result += 2 * math.pi
+
+    return math.degrees(result)
+
+
 def cone_pair_midpoint(point1, point2):
     """
     Function to calculate the midpoint between two points.
@@ -95,7 +165,7 @@ def cone_pair_midpoint(point1, point2):
     @param point1 : First Point
     @param point2 : Second Point
 
-    @return : New Point object, at the midpoint
+    @return       : New Point object, at the midpoint
     """
 
     xval = (point1.get_x() + point2.get_x()) / 2
@@ -108,7 +178,7 @@ def cone_pair_midpoint(point1, point2):
 def sort_points(listx, listy, colours):
     """
     Given a list of x coords, y coords, and colours, sort the points
-    ASSUMING THE TRACK IS CLOCKWISE, AND WE MAKE AN ANTI-CLOCKWISE PATH
+    ASSUMING THE TRACK IS CIRCULAR/OVAL, AND WE MAKE AN ANTI-CLOCKWISE PATH
 
     @param listx   : List of points' x coordinates
     @param listy   : List of points' y coordinates
@@ -122,7 +192,10 @@ def sort_points(listx, listy, colours):
 
     points = parse_points(listx, listy, colours)
     centre_point = get_points_mean(points)
+
     start_points = []
+    blue_cones = []
+    yellow_cones = []
 
     # First, find the 2 start points, they are of colour 0
     for i in points:
@@ -133,15 +206,92 @@ def sort_points(listx, listy, colours):
     if len(start_points) != 2:
         return
 
-    sorted_points_pair = {0 : (start_points[0], start_points[1])}
+    # We need to find the closest starting cone to the midpoint (this will be part of the blue list)
+    closest_start_cone = find_closest(centre_point, [start_points[0], start_points[1]])
+    other_start_cone = start_points[0] if closest_start_cone.compare_to(start_points[1]) else start_points[1]
 
-    # Now, we go around anti-clockwise and find a path for one side of the cones,
-    # we will look for cones with colour 1
+    start_angle_blue = find_angle(centre_point, closest_start_cone)
+    start_angle_yellow = find_angle(centre_point, other_start_cone)
 
+    blue_cones.append(closest_start_cone)
+    yellow_cones.append(other_start_cone)
+
+    # We separate the cones into inside and outside cone groups
+    for i in points:
+        if i.get_colour() == 1:
+            blue_cones.append(i)
+        elif i.get_colour() == 2:
+            yellow_cones.append(i)
+
+    sorted_points_pair = {0: (start_points[0], start_points[1])}
+
+    # We find the angle to each of the blue cones from the centre_point
+    cone_bearings_blue = {}
+    cone_bearings_yellow = {}
+    for i in blue_cones:
+        cone_bearings_blue[i] = find_angle(centre_point, i)
+        #print(cone_bearings[i])
+
+    for i in yellow_cones:
+        cone_bearings_yellow[i] = find_angle(centre_point, i
+                                             )
+
+    # Now, we normalise the angles to start at 0 at the starting cone, then ascend anti-clockwise
+    # Formula: angle += [(360 - start_angle) + angle] % 360
+    for i in cone_bearings_blue:
+        cone_bearings_blue[i] = math.fmod(((360 - start_angle_blue) + cone_bearings_blue[i]), float(360))
+        #print(cone_bearings_blue[i])
+
+    for i in cone_bearings_yellow:
+        cone_bearings_yellow[i] = math.fmod(((360 - start_angle_yellow) + cone_bearings_yellow[i]), float(360))
+
+    # Using the centre_point, we go around anti-clockwise and find a path for the innermost cones
+    # Each of these cones are then matched up with their matching cone on the other side of the track
+    # The following solution will only work for a circular track!
+    cone_bearings_blue = {k: v for k, v in sorted(cone_bearings_blue.items(), key=lambda item: item[1])}
+    cone_bearings_yellow = {k: v for k, v in sorted(cone_bearings_yellow.items(), key=lambda item: item[1])}
+
+    dummy_blue = []
+    dummy_yellow = []
+
+    for i in cone_bearings_blue:
+        # Check if this one is the start cone (angle = 0)
+        if cone_bearings_blue[i] == 0:
+            continue
+        else:
+            dummy_blue.append(i)
+
+    for i in cone_bearings_yellow:
+        # Check if this one is the start cone (angle = 0)
+        if cone_bearings_yellow[i] == 0:
+            continue
+        else:
+            dummy_yellow.append(i)
+
+    for i in range(len(dummy_blue)):
+
+        #plt.scatter(CX1, CY1, c=CC1)
+        #plt.plot([dummy_blue[i].get_x(), dummy_yellow[i].get_x()], [dummy_blue[i].get_y(), dummy_yellow[i].get_y()], '-o')
+        #plt.axis('square')
+        #plt.show()
+
+        sorted_points_pair[i + 1] = (dummy_blue[i], dummy_yellow[i])
 
     sorted_listx = []
     sorted_listy = []
     sorted_colours = []
+
+    # Now we put all the items into lists so it can be interpreted by our previous functions
+    for i in sorted_points_pair:
+        sorted_listx.append(sorted_points_pair[i][0].get_x())
+        sorted_listy.append(sorted_points_pair[i][0].get_y())
+        sorted_colours.append(sorted_points_pair[i][0].get_colour())
+
+        sorted_listx.append(sorted_points_pair[i][1].get_x())
+        sorted_listy.append(sorted_points_pair[i][1].get_y())
+        sorted_colours.append(sorted_points_pair[i][1].get_colour())
+
+    return sorted_listx, sorted_listy, sorted_colours
 
 
 def get_point_pairs(listx, listy, colours):
@@ -221,7 +371,7 @@ def task1():
     # Store all the midpoints as dictionary entries, with its index as a key
     midpoints = get_track_midpoints(cones)
 
-    (xList, yList) = get_point_list(midpoints)
+    (xList, yList, colourList) = get_point_list(midpoints)
 
     # Plot out existing tracks
     plt.scatter(CX1, CY1, c=CC1)
@@ -234,16 +384,17 @@ def task1():
 
 def task2():
     """ Task 2 """
-    sorted_points = sort_points(CX2, CY2, CC2)
+    (xlist, ylist, colourlist) = sort_points(CX2, CY2, CC2)
 
+    cones = get_point_pairs(xlist, ylist, colourlist)
 
-    #cones = get_point_pairs(CX2, CY2, CC2)
+    midpoints = get_track_midpoints(cones)
 
-    #(xlist, ylist, colourlist) = get_point_list(cones)
+    (x_mids, y_mids, colour_mids) = get_point_list(midpoints)
 
-    #plt.scatter(xlist, ylist, c=colourlist)
     plt.scatter(CX2, CY2, c=CC2)
-    plt.scatter(centre_point.get_x(), centre_point.get_y())
+
+    plt.plot(x_mids, y_mids, '-o')
     plt.axis('equal')
     plt.show()
 
@@ -252,7 +403,7 @@ def task2():
 
 if __name__ == '__main__':
 
-    #task1()
+    task1()
     task2()
 
 

@@ -28,11 +28,46 @@ CC2 = [1, 1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 0, 2, 1, 0, 1, 1, 2, 2, 1]
 ##------------------------------- My code  ------------------------------
 
 # ----- Constants -----
-# EVENTS
+# Event classifications
 TURN_START = 0
 TURN_STOP = 1
 THROTTLE = 2
 BRAKE = 3
+SHIFT_LEFT = 4
+SHIFT_RIGHT = 5
+
+# Turn classifications
+RIGHT_ANGLE = 0
+DOUBLE_APEX = 1
+HAIRPIN = 2
+S_CURVE = 3
+INCREASING_RADIUS = 4
+DECREASING_RADIUS = 5
+
+
+class Waypoint:
+    """
+    Class for physical waypoints on a track, as a line across the width of the track that
+    the car is guaranteed to cross
+
+    A waypoint is directly associated with an Event that can be triggered when the waypoint is crossed
+    """
+    def __init__(self, midpoint, event=None):
+        """
+        Constructor for waypoint class
+        :param midpoint: Point in the middle of the track where the waypoint is based
+        :param event: Event triggered by this waypoint
+        """
+        self.midpoint = midpoint
+        self.point1 = None
+        self.point2 = None
+
+        if event is not None:
+            self.event = event
+
+        # Find the endpoints
+
+
 
 class Event:
     """
@@ -88,16 +123,18 @@ class Event:
         """
         print(str(self.event_type) + " Event @ t=" + str(self.time) + ", value=" + str(self.value))
 
+
 class RacingCurve:
     """
     Class representing a curve on a track (typically taken by a vehicle)
     """
-    def __init__(self, start, inner_bounds=None, outer_bounds=None, ls=None, end_time=None, starting_angle=None, events=None):
+    def __init__(self, start, midpoints=None, inner_bounds=None, outer_bounds=None, ls=None, end_time=None, starting_angle=None, events=None):
         """
         Class constructor, representing a curve on a track (typically taken by a vehicle)
 
         :param start : Point: start point
 
+        :param midpoints : Dictionary of track midpoints (OPTIONAL)
         :param inner_bounds : List of Points - Track's inner bounds (OPTIONAL)
         :param outer_bounds : List of Points - Track's outer bounds (OPTIONAL)
         :param ls : Linspace - Linear space for indexing/parametrising curve (OPTIONAL)
@@ -107,6 +144,8 @@ class RacingCurve:
 
         """
         self.start = start
+
+        self.MAX_SPEED = 0.05
 
         # Point for storing car's current position
         self.position = start
@@ -124,18 +163,21 @@ class RacingCurve:
         self.throttle = 0.0
 
         # Throttle sensitivity
-        self.throttle_sensitivity = 1.0
+        self.throttle_sensitivity = 0.001
 
         # Braking amount (deceleration)
         self.brake = 0.0
 
         # Brake sensitivity
-        self.brake_sensitivity = 1.0
+        self.brake_sensitivity = 0.001
 
         # {t: (Point, direction, speed)}
         self.path = {}
 
         # OPTIONAL VALUES
+        if midpoints is not None:
+            self.midpoints = midpoints
+
         if inner_bounds is not None:
             self.inner_bounds = inner_bounds
         else:
@@ -177,6 +219,10 @@ class RacingCurve:
         if t_start is None:
             t_start = 0
 
+        # Mark out important events
+
+        path_points = {}
+
         current_events = []
         # Go through each t value in the linspace
         for t in range(t_start, t_end):
@@ -184,18 +230,47 @@ class RacingCurve:
             self.speed += (self.throttle * self.throttle_sensitivity) - \
                           (self.brake * self.brake_sensitivity)
 
+            # Limit to a simulated max speed
+            if self.speed > self.MAX_SPEED:
+                self.speed = self.MAX_SPEED
+
             # 2: Determine new position
             (x_unit, y_unit) = angle_to_units(self.direction)
+            x_unit *= self.speed
+            y_unit *= self.speed
+
+            self.position = Point(self.position.get_x() + x_unit,
+                                  self.position.get_y() + y_unit)
+
+            path_points[t] = self.position
 
             # 3: Check for events here
             if self.events is not None:
                 current_events = return_event_here(t, self.events)
                 if current_events is not None:
                     for j in current_events:
-                        #j.print_event()
-                        # TODO - PROCESS EVENT
+                        j.print_event()
 
-    dummy420 = 69
+                        # Switch on event type
+                        if j.get_event_type() == TURN_START:
+                            # Process start of a turn
+                            pass
+                        if j.get_event_type() == TURN_STOP:
+                            # Process end of a turn
+                            pass
+                        if j.get_event_type() == THROTTLE:
+                            # Process throttle engage
+                            self.throttle = j.get_value()
+                        if j.get_event_type() == BRAKE:
+                            # Process brake engage
+                            self.brake = j.get_value()
+                            self.throttle = 0
+
+            # 4: Check for important events a bit into the near future
+            # First, check for any important
+
+        return path_points
+
 
 class Point:
     """
@@ -546,9 +621,9 @@ def get_point_list(points):
     colourList = []
 
     for i in points:
-        xList.append(points.get(i).get_x())
-        yList.append(points.get(i).get_y())
-        colourList.append(points.get(i).get_colour())
+        xList.append(points[i].get_x())
+        yList.append(points[i].get_y())
+        colourList.append(points[i].get_colour())
 
     return xList, yList, colourList
 
@@ -602,12 +677,22 @@ def curve():
     # We start off by adding a throttle event at t=0
     initial_events = [Event(THROTTLE, 1.0, time=0)]
     racing_curve = RacingCurve(midpoints[0], starting_angle=0, events=initial_events)
-    racing_curve.get_path(t_start=0, t_end=5)
+    curve_points = racing_curve.get_path(t_start=0, t_end=70)
+    curve_points_list = list(curve_points.values())
+
+    dummy123 = 2345
+
+    (x_list, y_list, colour_list) = get_point_list(curve_points_list)
+
+    (x_mids, y_mids, colour_mids) = get_point_list(midpoints)
+
 
     x = np.linspace(0, 2*np.pi, 100)
-    #fig = plt.figure()
-    #plt.polar(x, np.sin(x))
+
+    plt.plot(x_mids, y_mids, '-o')
     plt.scatter(CX1, CY1, c=CC1)
+    plt.plot(x_list, y_list, 'o-')
+    plt.axis([-0.1, 5.1, -1, 3])
     plt.show()
 
     dummy123 = 420.69

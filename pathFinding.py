@@ -27,21 +27,33 @@ CC2 = [1, 1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 0, 2, 1, 0, 1, 1, 2, 2, 1]
 
 ##------------------------------- My code  ------------------------------
 
-# Constants
+# ----- Constants -----
+# EVENTS
 TURN_START = 0
 TURN_STOP = 1
-
+THROTTLE = 2
+BRAKE = 3
 
 class Event:
     """
-    Class for representing an event that happens on the track
-
-    @param type : Event Type
-    @param time : Event time (along linspace)
+    Class for representing an event that happens on the track. Currently events include:
+        TURN_START   (value: direction)
+        TURN_STOP    (value: None)
+        THROTTLE     (value: Amount)
+        BRAKE        (value: Amount)
     """
-    def __init__(self, type, time=None, location=None):
+    def __init__(self, event_type, value, time=None, location=None):
+        """
+        Constructor for the Event class
 
-        self.type = type
+        :param type  : Event Type
+        :param value : Value associated with event
+        :param time  : Event time (along linspace)
+        :param location : Event location as a Point
+        """
+
+        self.event_type = event_type
+        self.value = value
 
         if time is not None:
             self.time = time
@@ -49,25 +61,76 @@ class Event:
         if location is not None:
             self.location = location
 
+    def get_event_type(self):
+        """
+        Get the type of this event
+        :return: int: Type of event
+        """
+        return self.event_type
+
+    def get_value(self):
+        """
+        Get the value of this event
+        :return: int/float : Value associated with this event
+        """
+        return self.value
+
+    def get_time(self):
+        """
+        Returns the event's time
+        :return: t: Time of this event
+        """
+        return self.time
+
+    def print_event(self):
+        """
+        Prints this event
+        """
+        print(str(self.event_type) + " Event @ t=" + str(self.time) + ", value=" + str(self.value))
 
 class RacingCurve:
     """
     Class representing a curve on a track (typically taken by a vehicle)
-
-    @param start : Point: start point
-
-    @param inner_bounds : List of Points - Track's inner bounds (OPTIONAL)
-    @param outer_bounds : List of Points - Track's outer bounds (OPTIONAL)
-    @param ls : Linspace - Linear space for indexing/parametrising curve (OPTIONAL)
-    @param end_time : End time (in linspace) of the track (OPTIONAL)
-    @param events : List of Event objects (OPTIONAL)
     """
-    def __init__(self, start, inner_bounds=None, outer_bounds=None, ls=None, end_time=None, events=None):
+    def __init__(self, start, inner_bounds=None, outer_bounds=None, ls=None, end_time=None, starting_angle=None, events=None):
+        """
+        Class constructor, representing a curve on a track (typically taken by a vehicle)
+
+        :param start : Point: start point
+
+        :param inner_bounds : List of Points - Track's inner bounds (OPTIONAL)
+        :param outer_bounds : List of Points - Track's outer bounds (OPTIONAL)
+        :param ls : Linspace - Linear space for indexing/parametrising curve (OPTIONAL)
+        :param end_time : End time (in linspace) of the track (OPTIONAL)
+        :param starting_angle : Angle the car starts driving (degrees from 0 - 360, with respect to the +x axis)
+        :param events : List of Event objects (OPTIONAL)
+
+        """
         self.start = start
 
-        self.direction = 0
-        self.speed = 0
+        # Point for storing car's current position
+        self.position = start
+
+        # Car's direction (0 - 360 degrees with respect to +x axis)
+        self.direction = 0.0
+
+        # Car's current speed (in direction of motion)
+        self.speed = 0.0
+
+        # Simulation end point (in time/linspace)
         self.end = 0
+
+        # Throttle amount (acceleration)
+        self.throttle = 0.0
+
+        # Throttle sensitivity
+        self.throttle_sensitivity = 1.0
+
+        # Braking amount (deceleration)
+        self.brake = 0.0
+
+        # Brake sensitivity
+        self.brake_sensitivity = 1.0
 
         # {t: (Point, direction, speed)}
         self.path = {}
@@ -86,26 +149,61 @@ class RacingCurve:
         if ls is not None:
             self.ls = ls
         else:
-            self.ls = np.linspace(0, )
+            self.ls = np.linspace(0, 999, 1000)
 
         if end_time is not None:
             self.end_time = end_time
         else:
             self.step_size = 0
 
+        if starting_angle is not None:
+            self.starting_angle = starting_angle
+        else:
+            self.starting_angle = 0
+
         if events is not None:
             self.events = events
         else:
             self.events = 0
 
+    def get_path(self, t_start=None, t_end=None):
+        """
+        Finds a path with a specified start and end time
+        
+        :param t_start : Starting time (default value = 0) (OPTIONAL)
+        :param t_end : End time (OPTIONAL)
+        :return : Dict {time(in linspace): Point}
+        """
+        if t_start is None:
+            t_start = 0
+
+        current_events = []
+        # Go through each t value in the linspace
+        for t in range(t_start, t_end):
+            # 1: Determine angle and velocity
+            self.speed += (self.throttle * self.throttle_sensitivity) - \
+                          (self.brake * self.brake_sensitivity)
+
+            # 2: Determine new position
+            (x_unit, y_unit) = angle_to_units(self.direction)
+
+            # 3: Check for events here
+            if self.events is not None:
+                current_events = return_event_here(t, self.events)
+                if current_events is not None:
+                    for j in current_events:
+                        #j.print_event()
+                        # TODO - PROCESS EVENT
+
+    dummy420 = 69
 
 class Point:
     """
     Class representing a point on the track
 
-    @param x      : x coordinate of point
-    @param y      : y coordinate of point
-    @param colour : OPTIONAL - colour of point
+    :param x      : x coordinate of point
+    :param y      : y coordinate of point
+    :param colour : OPTIONAL - colour of point
 
     """
     def __init__(self, x, y, colour=None):
@@ -130,19 +228,46 @@ class Point:
         """
         Compares this point to another point, return true if it is at the same location, false otherwise
 
-        @param other : Other Point
-        @return : True if same location as other point, false otherwise
+        :param other : Other Point
+        :return : True if same location as other point, false otherwise
         """
         return True if ((other.get_x() == self.get_x()) and (other.get_y() == self.get_y())) else False
+
+def return_event_here(time, events):
+    """
+    Get a list of all the events at a given time
+    :param time: Time in linspace
+    :param events: List of events
+
+    :return: List of events that occur at this time
+    """
+    event_list = []
+    for i in events:
+        if i.get_time() == time:
+            event_list.append(i)
+
+    return event_list
+
+def angle_to_units(angle):
+    """
+    Converts an angle to unit vectors in the x and y directions
+    :param angle : Angle (in degrees) from 0 - 360
+
+    :return: Tuple: (x_unit, y_unit)
+    """
+    x_unit = math.cos(math.radians(angle))
+    y_unit = math.sin(math.radians(angle))
+
+    return x_unit, y_unit
 
 
 def get_points_mean(points):
     """
     Get the middle point of a set of points
 
-    @param points : List of points
+    :param points : List of points
 
-    @return: Point: Middle point of all points (simple mean)
+    :return: Point: Middle point of all points (simple mean)
     """
     sum_x = 0
     sum_y = 0
@@ -161,11 +286,11 @@ def parse_points(list_x, list_y, list_colours):
     """
     Translate coordinates list to list of Points
 
-    @param list_x       : List of x coordinates
-    @param list_y       : List of y coordinates
-    @param list_colours : List of colours for each point
+    :param list_x       : List of x coordinates
+    :param list_y       : List of y coordinates
+    :param list_colours : List of colours for each point
 
-    @return: List of points
+    :return: List of points
     """
     points = []
     for i in range(len(list_x)):
@@ -178,10 +303,10 @@ def find_distance(origin, dest):
     """
     Find the (Euclidean) distance between 2 Points
 
-    @param origin : Origin point (reference)
-    @param dest   : Point to find distance to
+    :param origin : Origin point (reference)
+    :param dest   : Point to find distance to
 
-    @return : Euclidean distance to point
+    :return : Euclidean distance to point
     """
     x = abs(origin.get_x() - dest.get_x())
     y = abs(origin.get_y() - dest.get_y())
@@ -192,10 +317,10 @@ def find_closest(origin, points):
     """
     Find the Point that is closest to a given Point
 
-    @param origin : Origin (reference) point
-    @param points : List of Points
+    :param origin : Origin (reference) point
+    :param points : List of Points
 
-    @return : Point: whichever point is closest
+    :return : Point: whichever point is closest
     """
     closest = 0
     closest_distance = -1
@@ -215,10 +340,10 @@ def find_angle(origin, dest):
     """
     Find the angle from an origin to a destination point (in degrees). Results from 0 - 360
 
-    @param origin : Origin point (reference)
-    @param dest   : Destination point to measure to
+    :param origin : Origin point (reference)
+    :param dest   : Destination point to measure to
 
-    @return : Angle to destination point (from +x axis)
+    :return : Angle to destination point (from +x axis)
     """
     x = dest.get_x() - origin.get_x()
     y = dest.get_y() - origin.get_y()
@@ -234,10 +359,10 @@ def cone_pair_midpoint(point1, point2):
     """
     Function to calculate the midpoint between two points.
 
-    @param point1 : First Point
-    @param point2 : Second Point
+    :param point1 : First Point
+    :param point2 : Second Point
 
-    @return       : New Point object, at the midpoint
+    :return       : New Point object, at the midpoint
     """
 
     xval = (point1.get_x() + point2.get_x()) / 2
@@ -252,11 +377,11 @@ def sort_points(listx, listy, colours):
     Given a list of x coords, y coords, and colours, sort the points
     ASSUMING THE TRACK IS CIRCULAR/OVAL, AND WE MAKE AN ANTI-CLOCKWISE PATH
 
-    @param listx   : List of points' x coordinates
-    @param listy   : List of points' y coordinates
-    @param colours : List of points' colours
+    :param listx   : List of points' x coordinates
+    :param listy   : List of points' y coordinates
+    :param colours : List of points' colours
 
-    @return : (sorted_x, sorted_y, sorted_colours):
+    :return : (sorted_x, sorted_y, sorted_colours):
                 sorted_x : Sorted x coordinates
                 sorted_y : Sorted y coordinates
                 sorted_colours : Sorted colours
@@ -365,11 +490,11 @@ def get_point_pairs(listx, listy, colours):
     Populates a dictionary with Point pairs, with an order
     REQUIRES THAT THE LIST BE ORDERED
 
-    @param listx   : List of x coordinates
-    @param listy   : List of y coordinates
-    @param colours : List of cone colours
+    :param listx   : List of x coordinates
+    :param listy   : List of y coordinates
+    :param colours : List of cone colours
 
-    @return : Dictionary with indices as keys, and Point tuples as entries
+    :return : Dictionary with indices as keys, and Point tuples as entries
     """
 
     # In the ordered list, the first point is the start cones
@@ -387,10 +512,10 @@ def get_point_pairs(listx, listy, colours):
 def get_track_midpoints(points):
     """
     Get a list of midpoints, with their index, in a dictionary
-    @param points : Dictionary containing point pairs with indices
+    :param points : Dictionary containing point pairs with indices
     @type points  : Dictionary := {index: (Point, Point)}
 
-    @return       : Dictionary containing midpoints with indices
+    :return       : Dictionary containing midpoints with indices
     """
 
     # Our dictionary of midpoints, empty for now
@@ -412,8 +537,8 @@ def get_point_list(points):
     Returns a tuple containing a list of x coordinates and a list of y coordinates from a cone
     dictionary
 
-    @param points   : Dictionary mapping point indices to Point objects
-    @return         : Tuple containing list of x coordinates, list of y coordinates, and list of colours
+    :param points   : Dictionary mapping point indices to Point objects
+    :return         : Tuple containing list of x coordinates, list of y coordinates, and list of colours
     """
 
     xList = []
@@ -471,12 +596,21 @@ def task2():
 def curve():
     """ "Racing curve" extension task"""
 
+    cones = get_point_pairs(CX1, CY1, CC1)
+    midpoints = get_track_midpoints(cones)
+
+    # We start off by adding a throttle event at t=0
+    initial_events = [Event(THROTTLE, 1.0, time=0)]
+    racing_curve = RacingCurve(midpoints[0], starting_angle=0, events=initial_events)
+    racing_curve.get_path(t_start=0, t_end=5)
 
     x = np.linspace(0, 2*np.pi, 100)
     #fig = plt.figure()
-    plt.polar(x, np.sin(x))
+    #plt.polar(x, np.sin(x))
     plt.scatter(CX1, CY1, c=CC1)
     plt.show()
+
+    dummy123 = 420.69
 
 
 if __name__ == '__main__':

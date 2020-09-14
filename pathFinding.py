@@ -52,21 +52,81 @@ class Waypoint:
 
     A waypoint is directly associated with an Event that can be triggered when the waypoint is crossed
     """
-    def __init__(self, midpoint, event=None):
+    def __init__(self, midpoint, inner_bounds=None, outer_bounds=None, event=None):
         """
         Constructor for waypoint class
         :param midpoint: Point in the middle of the track where the waypoint is based
-        :param event: Event triggered by this waypoint
+        :param inner_bounds: List of Points corresponding to the inside of the track
+        :param outer_bounds: List of Points corresponding to the outside of the track
+
+        :param event: Event triggered by this waypoint (OPTIONAL)
         """
         self.midpoint = midpoint
-        self.point1 = None
-        self.point2 = None
+        self.inner_bounds = inner_bounds
+        self.outer_bounds = outer_bounds
+        #self.point1 = None
+        #self.point2 = None
+        self.midpoint_bounds = None
 
         if event is not None:
             self.event = event
 
-        # Find the endpoints
+        # Scaling line from one cone pair to the next
+        found_line = False
+        epsilon = 0.001
+        steps = 300
+        for i in range(len(inner_bounds)):
+            # Prevent unnecessary further looping once we find the line
+            if found_line:
+                break
 
+            point1_inner = inner_bounds[i]
+            point2_inner = inner_bounds[i + 1] if i < (len(inner_bounds) - 1) else inner_bounds[0]
+            point1_outer = outer_bounds[i]
+            point2_outer = outer_bounds[i + 1] if i < (len(inner_bounds) - 1) else outer_bounds[0]
+
+            delta_x_inner = point2_inner.get_x() - point1_inner.get_x()
+            delta_y_inner = point2_inner.get_y() - point1_inner.get_y()
+            delta_x_outer = point2_outer.get_x() - point1_outer.get_x()
+            delta_y_outer = point2_outer.get_y() - point1_outer.get_y()
+
+            # Try our initial search with coarse step to find the sector (more efficient than searching the entire
+            # track with a fine step)
+            for j in range(steps):
+                multiplicand = j * (1 / steps)
+                inner_point = Point(point1_inner.get_x() + (multiplicand * delta_x_inner),
+                                    point1_inner.get_y() + (multiplicand * delta_y_inner))
+                outer_point = Point(point1_outer.get_x() + (multiplicand * delta_x_outer),
+                                    point1_outer.get_y() + (multiplicand * delta_y_outer))
+
+                # Now we have the line, we want to determine the distance from the points to the waypoint's origin Point
+                p_inner = np.array([inner_point.get_x(), inner_point.get_y()])
+                p_outer = np.array([outer_point.get_x(), outer_point.get_y()])
+                p_origin = np.array([self.midpoint.get_x(), self.midpoint.get_y()])
+
+                # Use vector cross products to find the distance from the waypoint's origin point to the line
+                dist = np.linalg.norm(np.cross(p_outer - p_inner, p_inner - p_origin)) / \
+                       np.linalg.norm(p_outer - p_inner)
+
+                max_distance_from_pair = 1
+                if dist < epsilon:
+                    dist1 = find_distance(self.midpoint, inner_point)
+                    dist2 = find_distance(self.midpoint, outer_point)
+
+                    if ((dist1 <= max_distance_from_pair) and (dist2 <= max_distance_from_pair)):
+                        self.midpoint_bounds = (inner_point, outer_point)
+                        found_line = True
+                        break
+                    else:
+                        # We got a dodgy result from the cross product
+                        pass
+
+    def get_waypoint_bounds(self):
+        """
+        Get the bounds of the waypoint line
+        :return: Tuple: The bounds of the waypoint line
+        """
+        return self.midpoint_bounds
 
 
 class Event:
@@ -81,7 +141,7 @@ class Event:
         """
         Constructor for the Event class
 
-        :param type  : Event Type
+        :param event_type  : Event Type
         :param value : Value associated with event
         :param time  : Event time (along linspace)
         :param location : Event location as a Point
@@ -128,7 +188,8 @@ class RacingCurve:
     """
     Class representing a curve on a track (typically taken by a vehicle)
     """
-    def __init__(self, start, midpoints=None, inner_bounds=None, outer_bounds=None, ls=None, end_time=None, starting_angle=None, events=None):
+    def __init__(self, start, midpoints=None, inner_bounds=None, outer_bounds=None, ls=None, end_time=None,
+                 starting_angle=None, events=None):
         """
         Class constructor, representing a curve on a track (typically taken by a vehicle)
 
@@ -220,6 +281,15 @@ class RacingCurve:
             t_start = 0
 
         # Mark out important events
+        # TESTING - mark out midpoints[3]
+        dummy_waypoint = Waypoint(Point(3.5, 0.7), inner_bounds=self.inner_bounds, outer_bounds=self.outer_bounds,
+                                  event=Event(TURN_START, value=0))
+
+        plt.plot([dummy_waypoint.get_waypoint_bounds()[0].get_x(), dummy_waypoint.get_waypoint_bounds()[1].get_x()],
+                 [dummy_waypoint.get_waypoint_bounds()[0].get_y(), dummy_waypoint.get_waypoint_bounds()[1].get_y()])
+
+        # Pass 1: Detecting turns
+        # TODO - Mark out points of interest
 
         path_points = {}
 
@@ -249,7 +319,7 @@ class RacingCurve:
                 current_events = return_event_here(t, self.events)
                 if current_events is not None:
                     for j in current_events:
-                        j.print_event()
+                        #j.print_event()
 
                         # Switch on event type
                         if j.get_event_type() == TURN_START:
@@ -674,18 +744,26 @@ def curve():
     cones = get_point_pairs(CX1, CY1, CC1)
     midpoints = get_track_midpoints(cones)
 
+    blue_points = []
+    yellow_points = []
+
+    for i in cones:
+        dummy123 = cones[i]
+        blue_points.append(cones[i][0])
+        yellow_points.append(cones[i][1])
+
     # We start off by adding a throttle event at t=0
     initial_events = [Event(THROTTLE, 1.0, time=0)]
-    racing_curve = RacingCurve(midpoints[0], starting_angle=0, events=initial_events)
+    racing_curve = RacingCurve(midpoints[0], midpoints=midpoints, starting_angle=0, events=initial_events,
+                               inner_bounds=blue_points, outer_bounds=yellow_points)
     curve_points = racing_curve.get_path(t_start=0, t_end=70)
     curve_points_list = list(curve_points.values())
 
     dummy123 = 2345
 
-    (x_list, y_list, colour_list) = get_point_list(curve_points_list)
+    (x_list, y_list, colour_list) = get_point_list(curve_points)
 
     (x_mids, y_mids, colour_mids) = get_point_list(midpoints)
-
 
     x = np.linspace(0, 2*np.pi, 100)
 

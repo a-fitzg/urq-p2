@@ -52,7 +52,7 @@ class Waypoint:
 
     A waypoint is directly associated with an Event that can be triggered when the waypoint is crossed
     """
-    def __init__(self, midpoint, inner_bounds=None, outer_bounds=None, event=None):
+    def __init__(self, midpoint, inner_bounds=None, outer_bounds=None, event=None, midpoints=None):
         """
         Constructor for waypoint class
         :param midpoint: Point in the middle of the track where the waypoint is based
@@ -67,9 +67,13 @@ class Waypoint:
         #self.point1 = None
         #self.point2 = None
         self.midpoint_bounds = None
+        self.crossed = False
 
         if event is not None:
             self.event = event
+
+        if midpoints is not None:
+            self.midpoints = midpoints
 
         # Scaling line from one cone pair to the next
         found_line = False
@@ -113,12 +117,13 @@ class Waypoint:
                     dist1 = find_distance(self.midpoint, inner_point)
                     dist2 = find_distance(self.midpoint, outer_point)
 
-                    if ((dist1 <= max_distance_from_pair) and (dist2 <= max_distance_from_pair)):
+                    if (dist1 <= max_distance_from_pair) and (dist2 <= max_distance_from_pair):
                         self.midpoint_bounds = (inner_point, outer_point)
                         found_line = True
                         break
                     else:
                         # We got a dodgy result from the cross product
+                        # This occurs when we match with a waypoint line on the other side of the track
                         pass
 
     def get_waypoint_bounds(self):
@@ -127,6 +132,13 @@ class Waypoint:
         :return: Tuple: The bounds of the waypoint line
         """
         return self.midpoint_bounds
+
+    def is_crossed(self):
+        """
+        Determines if this Waypoint has already been crossed
+        :return: True if crossed, False if not yet crossed
+        """
+        return self.crossed
 
 
 class Event:
@@ -283,13 +295,68 @@ class RacingCurve:
         # Mark out important events
         # TESTING - mark out midpoints[3]
         dummy_waypoint = Waypoint(Point(3.5, 0.7), inner_bounds=self.inner_bounds, outer_bounds=self.outer_bounds,
-                                  event=Event(TURN_START, value=0))
+                                  event=Event(TURN_START, value=0), midpoints=self.midpoints)
 
         plt.plot([dummy_waypoint.get_waypoint_bounds()[0].get_x(), dummy_waypoint.get_waypoint_bounds()[1].get_x()],
                  [dummy_waypoint.get_waypoint_bounds()[0].get_y(), dummy_waypoint.get_waypoint_bounds()[1].get_y()])
 
         # Pass 1: Detecting turns
+        # Follow the track midpoints around and detect changes in angle indicative of turns
         # TODO - Mark out points of interest
+        d_theta = []
+        headings = []
+        previous_theta = 0
+        for i in self.midpoints:
+            #self.midpoints[i]
+            if i == 0:
+                headings.append(0.0)
+                d_theta.append(0.0)
+            else:
+                # Find current angle, and subtract previous angle
+                current_heading = find_angle(self.midpoints[i - 1], self.midpoints[i])
+                previous_heading = headings[i - 1]
+
+                heading_change = current_heading - previous_heading
+
+                dummy456 = 69
+
+                headings.append(current_heading)
+                d_theta.append(heading_change)
+        dummy123 = 21
+        d_theta.append((360 + headings[0]) - headings[-1])
+
+        # Now, we detect the type of turn. We can determine the angle of the turn by following the turn
+        # Looking for steep turn
+        turns = {}
+        in_turn = False
+        nth_turn = -1
+        for i in range(len(d_theta)):
+            # If our current turning angle is high enough to count as a turn
+            if d_theta[i] > 30.0:
+                if in_turn is False:
+                    # We have just entered a turn
+                    nth_turn += 1
+                    turns[nth_turn] = (self.midpoints[i], [])
+                in_turn = True
+            else:
+                in_turn = False
+            if in_turn:
+                turns[nth_turn][1].append(d_theta[i])
+
+        turn_classes = {}
+        # Now we go through all the turns and classify them
+        for i in turns:
+            # 1st, check all turns are in the same direction:
+            if all(item >= 0 for item in turns[i][1]) or all(item < 0 for item in turns[i][1]):
+                # All the turns are in the same direction
+                # TODO - sub-classify turns
+                angle_sum = sum(turns[i][1])
+                dummy12345 = 4567
+                pass
+            else:
+                # We have an S-shaped curve
+                turn_classes[i] = (S_CURVE, turns[i][0])
+                pass
 
         path_points = {}
 
@@ -378,6 +445,7 @@ class Point:
         """
         return True if ((other.get_x() == self.get_x()) and (other.get_y() == self.get_y())) else False
 
+
 def return_event_here(time, events):
     """
     Get a list of all the events at a given time
@@ -392,6 +460,7 @@ def return_event_here(time, events):
             event_list.append(i)
 
     return event_list
+
 
 def angle_to_units(angle):
     """
@@ -748,7 +817,6 @@ def curve():
     yellow_points = []
 
     for i in cones:
-        dummy123 = cones[i]
         blue_points.append(cones[i][0])
         yellow_points.append(cones[i][1])
 

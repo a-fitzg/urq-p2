@@ -6,6 +6,8 @@
 
 
 ##------------------------------Import Statements-------------------------------
+import collections
+
 import numpy as np
 import math
 import cmath
@@ -37,6 +39,9 @@ SHIFT_LEFT = 4
 SHIFT_RIGHT = 5
 TARGET = 6
 FINISH_LINE = 7
+HAIRPIN_ENTER = 8
+HAIRPIN_APEX = 9
+HAIRPIN_EXIT = 10
 
 # Turn classifications
 RIGHT_ANGLE = 0
@@ -45,6 +50,79 @@ HAIRPIN = 2
 S_CURVE = 3
 INCREASING_RADIUS = 4
 DECREASING_RADIUS = 5
+
+
+class TargetQueue:
+    """
+    Class for a queue of track targets, that we can ripple add to.
+    """
+    def __init__(self):
+        """
+        Constructor for TargetQueue class. This constructor takes no arguments
+        """
+        self.target_dict = {}
+        self.queue_length = 0
+
+    def add_target(self, index, target, classification=None):
+        """
+        Add a target to the queue at a given index. Targets after the given index are shifted up the queue by one
+
+        :param index: Index of this target
+        :param target: Point object as a target
+        :param classification: Target action classification (OPTIONAL)
+        :return: True if successfully added, False if invalid index given
+        """
+        if index == self.queue_length:
+            # Add the item to the end of the queue
+            self.target_dict[self.queue_length] = (target, classification)
+            self.queue_length += 1
+        elif index < self.queue_length:
+            # Add the item into the middle of the queue
+            for i in reversed(range(index + 1, self.queue_length + 1)):
+                # Shift all proceeding elements to the right by one
+                self.target_dict[i] = self.target_dict[i - 1]
+            # Then, add the element
+            self.target_dict[index] = (target, classification)
+            self.queue_length += 1
+            pass
+        else:
+            # Index out of bounds
+            return False
+
+    def get_queue_size(self):
+        """
+        Returns the queue size
+        :return: Queue size
+        """
+        return self.queue_length
+
+    def append_target(self, target, classification=None):
+        """
+        Append a target to the end of the queue
+
+        :param target: Point object as a target
+        :param classification: Target action classification (OPTIONAL)
+        """
+        self.add_target(self.queue_length, target, classification)
+
+    def pop_target(self):
+        """
+        Pops the target at the top of the queue (lowest index)
+        :return: (target (Point), classification), or None if the queue is empty
+        """
+        if self.queue_length > 0:
+            if self.queue_length == 1:
+                self.queue_length = 0
+                return self.target_dict.pop(0)
+            else:
+                retval = self.target_dict[0]
+                for i in range(0, self.queue_length - 1):
+                    self.target_dict[i] = self.target_dict[i + 1]
+                self.target_dict.pop(self.queue_length - 1)
+                self.queue_length -= 1
+                return retval
+        else:
+            return None
 
 
 class Waypoint:
@@ -386,12 +464,99 @@ class RacingCurve:
                 pass
             elif turn_classes[i][0] == HAIRPIN:
                 # Process hairpin turn
-                dummymeme = turn_classes[i][1]
+
                 # First, we need to get the 2 points that correspond to the first
                 # and last inner cones associated with the turn.
                 # Then, we draw a line from those 2 to the edges of the track
                 # to find the waypoints for the racing curve
-                dummy456789 = turn_classes[i][2]
+                turn_highest_index = (turns[i][2] - 2) + (len(turns[i][1]))
+                temp_length = len(self.inner_bounds)
+
+                point1 = self.inner_bounds[turns[i][2] - 1]
+
+                # Checking if the last point of the turn is the
+                if turn_highest_index >= temp_length:
+                    # The last point is actually at the start line
+                    point2 = self.inner_bounds[0]
+                else:
+                    point2 = self.inner_bounds[turn_highest_index]
+
+                # Next, we find the turn enter and exit points.
+                # A conventional hairpin turn entry point starts in line with the track turn apex, and on he opposite
+                # side of the track. The exit is similarly in line with the apex of the track turn, but as close in
+                # to the track turn as possible. i.e. we start the the turn on the outside and move to the inside
+                # To find the outside edge entry point, we need to find the outside interval that intersects the line
+                # described by the 2 inner-edge points that correspond to the start and the end of the turn.
+                # The apex line (drawn from side to side of the track, tangential to the apex of the track turn inside)
+                # describes a line, Draw a line from point2 to point1 to determine direction. Then we draw a line from
+                # point1 in the point2 -> point1 direction, sufficiently long enough to clip the edge of the track
+                # Find unit vectors from point2 to point1
+                x_unit = point1.get_x() - point2.get_x()
+                y_unit = point1.get_y() - point2.get_y()
+                unit_mag = math.sqrt((x_unit ** 2) + (y_unit ** 2))
+                x_unit *= (1 / unit_mag)
+                y_unit *= (1 / unit_mag)
+
+                # Now we determine a point in line with these points and off the track
+                intersector_length = 10
+                off_point = Point(point1.get_x() + intersector_length * x_unit,
+                                  point1.get_y() + intersector_length * y_unit)
+
+                entry_point = None
+                apex_point = None
+                exit_point = None
+
+                # First we look for the outer turn point
+                for j in range(len(self.outer_bounds)):
+                    # Draw a segment between this outer cone and the next outer cone
+                    outer_point1 = self.outer_bounds[j]
+                    outer_point2 = self.outer_bounds[j + 1] if j + 1 < len(self.outer_bounds) else self.outer_bounds[0]
+                    result = get_segment_intersection(point1, off_point, outer_point1, outer_point2)
+                    if result is not None:
+                        # We found the intersection
+                        entry_point = result
+
+                        # We also might move it in a tiny bit so it's not *literally* on the edge of the track
+                        new_x = entry_point.get_x() - (0.1 * x_unit)
+                        new_y = entry_point.get_y() - (0.1 * y_unit)
+                        entry_point.set_x(new_x)
+                        entry_point.set_y(new_y)
+                        plt.scatter([entry_point.get_x()], [entry_point.get_y()], marker='x')
+
+                        break
+                    else:
+                        # This is not the intersection interval. Keep looking
+                        continue
+
+                # Next, we look for the turn apex
+                if len(turns[i][1]) % 2 == 1:
+                    # If we have a turns list with odd number, we can take the middle point as the apex
+                    apex_point = self.midpoints[((len(turns[i][1]) - 1) / 2) + (turns[i][2] - 1)]
+                    pass
+                else:
+                    # We have to determine the middle point for the apex
+                    index_first = int((((len(turns[i][1])) / 2) - 1) + (turns[i][2] - 1))
+                    index_last = int(((len(turns[i][1])) / 2) + (turns[i][2] - 1))
+
+                    inner1 = self.inner_bounds[index_first]
+                    inner2 = self.inner_bounds[index_last] if index_last < turn_highest_index else self.inner_bounds[0]
+
+                    outer1 = self.outer_bounds[index_first]
+                    outer2 = self.outer_bounds[index_last] if index_last < turn_highest_index else self.outer_bounds[0]
+
+                    inner_mid = cone_pair_midpoint(inner1, inner2)
+                    outer_mid = cone_pair_midpoint(outer1, outer2)
+                    apex_point = cone_pair_midpoint(inner_mid, outer_mid)
+
+                plt.scatter([apex_point.get_x()], [apex_point.get_y()], marker='D')
+
+                # Finally, we get the exit point
+                exit_point = Point(point2.get_x() - (0.1 * x_unit), point2.get_y() - (0.1 * y_unit))
+
+                plt.scatter([exit_point.get_x()], [exit_point.get_y()], marker='*')
+
+                dummy456789 = 42
+
             elif turn_classes[i][0] == S_CURVE:
                 # Process S-curve
                 pass
@@ -482,6 +647,15 @@ class Point:
     def get_colour(self):
         return self.colour
 
+    def set_x(self, new_x):
+        self.x = new_x
+
+    def set_y(self, new_y):
+        self.y = new_y
+
+    def set_colour(self, new_colour):
+        self.colour = new_colour
+
     def compare_to(self, other):
         """
         Compares this point to another point, return true if it is at the same location, false otherwise
@@ -490,6 +664,44 @@ class Point:
         :return : True if same location as other point, false otherwise
         """
         return True if ((other.get_x() == self.get_x()) and (other.get_y() == self.get_y())) else False
+
+
+def get_segment_intersection(p0, p1, p2, p3):
+    """
+    Get the intersection between two line segments, with Points as line parameters
+    Returns None if there is no intersection
+
+    :param p0: Point 1, line 1
+    :param p1: Point 2, line 1
+    :param p2: Point 1, line 2
+    :param p3: Point 2, line 2
+    :return: Point of intersection if the line segments intersect,
+             None if there is no intersection
+    """
+    p0_x = p0.get_x()
+    p0_y = p0.get_y()
+    p1_x = p1.get_x()
+    p1_y = p1.get_y()
+    p2_x = p2.get_x()
+    p2_y = p2.get_y()
+    p3_x = p3.get_x()
+    p3_y = p3.get_y()
+
+    s1_x = p1_x - p0_x
+    s1_y = p1_y - p0_y
+    s2_x = p3_x - p2_x
+    s2_y = p3_y - p2_y
+
+    s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / (-s2_x * s1_y + s1_x * s2_y)
+    t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / (-s2_x * s1_y + s1_x * s2_y)
+
+    if 0 <= s <= 1 and 0 <= t <= 1:
+        # Intersection found
+        int_x = p0_x + (t * s1_x)
+        int_y = p0_y + (t * s1_y)
+        return Point(int_x, int_y)
+
+    return None
 
 
 def return_event_here(time, events):
@@ -811,6 +1023,17 @@ def get_point_list(points):
         colourList.append(points[i].get_colour())
 
     return xList, yList, colourList
+
+
+def test_print_dict(q):
+    length = q.get_queue_size()
+    if length <= 0:
+        return
+    else:
+        result = ""
+        for i in range(length):
+            result += " [" + str(q.target_dict[i][0]) + "] "
+        print(result)
 
 
 def task1():

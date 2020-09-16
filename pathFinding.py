@@ -35,6 +35,8 @@ THROTTLE = 2
 BRAKE = 3
 SHIFT_LEFT = 4
 SHIFT_RIGHT = 5
+TARGET = 6
+FINISH_LINE = 7
 
 # Turn classifications
 RIGHT_ANGLE = 0
@@ -104,6 +106,7 @@ class Waypoint:
                                     point1_outer.get_y() + (multiplicand * delta_y_outer))
 
                 # Now we have the line, we want to determine the distance from the points to the waypoint's origin Point
+                # We convert the Points to numpy-compatible arrays
                 p_inner = np.array([inner_point.get_x(), inner_point.get_y()])
                 p_outer = np.array([outer_point.get_x(), outer_point.get_y()])
                 p_origin = np.array([self.midpoint.get_x(), self.midpoint.get_y()])
@@ -302,7 +305,6 @@ class RacingCurve:
 
         # Pass 1: Detecting turns
         # Follow the track midpoints around and detect changes in angle indicative of turns
-        # TODO - Mark out points of interest
         d_theta = []
         headings = []
         previous_theta = 0
@@ -322,7 +324,6 @@ class RacingCurve:
 
                 headings.append(current_heading)
                 d_theta.append(heading_change)
-        dummy123 = 21
         d_theta.append((360 + headings[0]) - headings[-1])
 
         # Now, we detect the type of turn. We can determine the angle of the turn by following the turn
@@ -336,7 +337,7 @@ class RacingCurve:
                 if in_turn is False:
                     # We have just entered a turn
                     nth_turn += 1
-                    turns[nth_turn] = (self.midpoints[i], [])
+                    turns[nth_turn] = (self.midpoints[i], [], i)
                 in_turn = True
             else:
                 in_turn = False
@@ -349,15 +350,60 @@ class RacingCurve:
             # 1st, check all turns are in the same direction:
             if all(item >= 0 for item in turns[i][1]) or all(item < 0 for item in turns[i][1]):
                 # All the turns are in the same direction
-                # TODO - sub-classify turns
+                # Sub-classify turns
                 angle_sum = sum(turns[i][1])
-                dummy12345 = 4567
-                pass
+                if 70 < angle_sum < 120:
+                    # This is a right-angle turn
+                    turn_classes[i] = (RIGHT_ANGLE, turns[i][0])
+                elif 150 < angle_sum < 200:
+                    # This is a u-turn
+                    # Now, we must determine if this is a double apex or a hairpin turn
+                    # Check if each turn change is greater than than 35 degrees
+                    if all(item >= 35 for item in turns[i][1]):
+                        # We have a hairpin
+                        turn_classes[i] = (HAIRPIN, turns[i][0])
+                    else:
+                        # We have a double-apex
+                        turn_classes[i] = (DOUBLE_APEX, turns[i][0])
+                # Other classifications can be written in here, haven't gotten around to it
             else:
                 # We have an S-shaped curve
                 turn_classes[i] = (S_CURVE, turns[i][0])
-                pass
 
+        # RIGHT_ANGLE = 0
+        # DOUBLE_APEX = 1
+        # HAIRPIN = 2
+        # S_CURVE = 3
+        # INCREASING_RADIUS = 4
+        # DECREASING_RADIUS = 5
+        # Now we go through and decide what to do for each waypoint
+        for i in turn_classes:
+            if turn_classes[i][0] == RIGHT_ANGLE:
+                # Process right-angle turn
+                pass
+            elif turn_classes[i][0] == DOUBLE_APEX:
+                # Process double-apex turn
+                pass
+            elif turn_classes[i][0] == HAIRPIN:
+                # Process hairpin turn
+                dummymeme = turn_classes[i][1]
+                # First, we need to get the 2 points that correspond to the first
+                # and last inner cones associated with the turn.
+                # Then, we draw a line from those 2 to the edges of the track
+                # to find the waypoints for the racing curve
+                dummy456789 = turn_classes[i][2]
+            elif turn_classes[i][0] == S_CURVE:
+                # Process S-curve
+                pass
+            elif turn_classes[i][0] == INCREASING_RADIUS:
+                # Process increasing radius turn
+                pass
+            elif turn_classes[i][0] == DECREASING_RADIUS:
+                # Process decreasing radius turn
+                pass
+            else:
+                pass
+        dummy456 = 123
         path_points = {}
 
         current_events = []
@@ -826,8 +872,6 @@ def curve():
                                inner_bounds=blue_points, outer_bounds=yellow_points)
     curve_points = racing_curve.get_path(t_start=0, t_end=70)
     curve_points_list = list(curve_points.values())
-
-    dummy123 = 2345
 
     (x_list, y_list, colour_list) = get_point_list(curve_points)
 

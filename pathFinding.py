@@ -224,6 +224,8 @@ class Waypoint:
                     if (dist1 <= max_distance_from_pair) and (dist2 <= max_distance_from_pair):
                         self.midpoint_bounds = (inner_point, outer_point)
                         found_line = True
+                        plt.plot([inner_point.get_x(), outer_point.get_x()],
+                                 [inner_point.get_y(), outer_point.get_y()], c='black')
                         break
                     else:
                         # We got a dodgy result from the cross product
@@ -243,6 +245,36 @@ class Waypoint:
         :return: True if crossed, False if not yet crossed
         """
         return self.crossed
+
+    def waypoint_distance(self, point):
+        """
+        Gets the distance from this Waypoint to a given point (the dodgy way!)
+        :param point: A Point to measure to
+        :return: Distance from the Point to the closest part of this Waypoint
+        """
+
+        local_dx = self.midpoint_bounds[1].get_x() - self.midpoint_bounds[0].get_x()
+        local_dy = self.midpoint_bounds[1].get_y() - self.midpoint_bounds[0].get_y()
+        point_span = []
+        num_steps = 100
+        for i in range(num_steps):
+            multiplicand = i * (1 / num_steps)
+            point_span.append(Point(self.midpoint_bounds[0].get_x() + (multiplicand * local_dx),
+                                    self.midpoint_bounds[0].get_y() + (multiplicand * local_dy)))
+
+        closest_point = None
+        closest_distance = None
+        for i in point_span:
+            local_dist = find_distance(point, i)
+            if closest_distance is None:
+                closest_distance = local_dist
+                closest_point = i
+            else:
+                if local_dist < closest_distance:
+                    closest_distance = local_dist
+                    closest_point = i
+
+        return closest_distance
 
 
 class Event:
@@ -546,7 +578,7 @@ class RacingCurve:
                         new_y = entry_point.get_y() - (0.1 * y_unit)
                         entry_point.set_x(new_x)
                         entry_point.set_y(new_y)
-                        plt.scatter([entry_point.get_x()], [entry_point.get_y()], marker='x')
+                        plt.scatter([entry_point.get_x()], [entry_point.get_y()], marker='x', c='red')
                         break
                     else:
                         # This is not the intersection interval. Keep looking
@@ -572,12 +604,12 @@ class RacingCurve:
                     outer_mid = cone_pair_midpoint(outer1, outer2)
                     apex_point = cone_pair_midpoint(inner_mid, outer_mid)
 
-                plt.scatter([apex_point.get_x()], [apex_point.get_y()], marker='D')
+                plt.scatter([apex_point.get_x()], [apex_point.get_y()], marker='x', c='red')
 
                 # Finally, we get the exit point
                 exit_point = Point(point2.get_x() - (0.1 * x_unit), point2.get_y() - (0.1 * y_unit))
 
-                plt.scatter([exit_point.get_x()], [exit_point.get_y()], marker='*')
+                plt.scatter([exit_point.get_x()], [exit_point.get_y()], marker='x', c='red')
 
                 # Now that we have the three points, we add these to a queue
                 # And then these queues are added to a master queue
@@ -647,7 +679,9 @@ class RacingCurve:
             prep_target = Point(this_point.get_x() + turn_leading_unit_x,
                                  this_point.get_y() + turn_leading_unit_y)
 
-            plt.scatter([prep_target.get_x()], [prep_target.get_y()], marker='X')
+            plt.scatter([prep_target.get_x()], [prep_target.get_y()], marker='o', c='pink', s=200)
+            plt.scatter([prep_target.get_x()], [prep_target.get_y()], marker='$HP$', c='red', s=150)
+
 
             this_queue.add_target(0, prep_target, classification=TURN_PREPARE)
 
@@ -666,8 +700,20 @@ class RacingCurve:
 
         path_points = {}
         current_events = []
+        finish_line = Waypoint(self.midpoints[0], self.inner_bounds, self.outer_bounds, midpoints=self.midpoints)
+
         # Go through each t value in the linspace
         for t in range(t_start, t_end):
+            # First, check if we've just finished the track
+            distance_to_finish_line = finish_line.waypoint_distance(self.position)
+
+            # Make sure we start the finish line triggering once we get in a bit, so it doesn't trigger as soon
+            # as we start
+            if t > 10:
+                if distance_to_finish_line < 0.05:
+                    # We have finished the race. Stop the simulation
+                    break
+
             # 1: Determine angle and velocity
             self.speed += (self.throttle * self.throttle_sensitivity) - \
                           (self.brake * self.brake_sensitivity)
@@ -722,7 +768,8 @@ class RacingCurve:
                         if j.get_event_type() == BRAKE:
                             # Process brake engage
                             self.brake = j.get_value()
-                            self.throttle = 0
+                            if self.brake != 0:
+                                self.throttle = 0
                         if j.get_event_type() == STEER:
                             self.turn = j.get_value()
 
@@ -730,98 +777,186 @@ class RacingCurve:
             # Get the next queued target
             next_queued = track_target_queue.peek_target(0)
             # Check for turning targets
-            if track_target_queue.target_dict[0][1] == TURN_PREPARE:
-                if find_distance(self.position, next_queued) < 0.05:
-                    # We've already basically hit the point, move on to the next one
-                    track_target_queue.pop_target()
-                    continue
-
-                # Look for the next item in the queue, so we can arrive already lined up with it
-                next_target = track_target_queue.peek_target(1)
-
-                # Get direction angle to the next target
-                new_bearing = find_angle(next_queued, next_target)
-                # So we need to be coming into this point with that angle
-                (this_x_unit, this_y_unit) = angle_to_units(new_bearing)
-
-                # Turn towards a point on that line
-                # We need to make a list of points that occur on the line, then find the closest point
-                spaced_points = []
-                other_side = Point(next_queued.get_x() - (10 * this_x_unit), next_queued.get_y() - (10 * this_y_unit))
-
-                # Draw a whole bunch of evenly-spaced points between these 2 points
-                dx = next_queued.get_x() - other_side.get_x()
-                dy = next_queued.get_y() - other_side.get_y()
-                numsteps = 100
-                for teeny in range(numsteps):
-                    mx = teeny * (1 / numsteps)
-                    spaced_points.append(Point(other_side.get_x() + (mx * dx), other_side.get_y() + (mx * dy)))
-
-                closest_point = None
-                other_closest_distance = None
-                for tiny in spaced_points:
-                    if other_closest_distance is None:
-                        closest_point = tiny
-                        other_closest_distance = find_distance(tiny, self.position)
-                    else:
-                        this_dist = find_distance(tiny, self.position)
-                        if this_dist < other_closest_distance:
-                            closest_point = tiny
-                            other_closest_distance = this_dist
-                new_goal = cone_pair_midpoint(closest_point, next_queued)
-
-                # Now we need to just point towards "new_goal". Find the angle change required to do it:
-                required_d_theta = find_angle(self.position, new_goal) - self.direction
-
-                # Determine needed steering direction
-
-                steer_required = None
-                if (required_d_theta > 355 or required_d_theta < 5):
-                    steer_required = 0
-                else:
-                    if required_d_theta > 180:
-                        # Need to turn right
-                        steer_required = 0.4
-                    else:
-                        steer_required = -0.4
-
-                self.events.append(Event(STEER, steer_required, time=(t + 1)))
-                #self.turn = steer_required
-
-            elif track_target_queue.target_dict[0][1] == HAIRPIN_ENTER:
-                if find_distance(self.position, next_queued) < 0.05:
-                    # We've already basically hit the point, move on to the next one
-                    track_target_queue.pop_target()
-                    continue
-                new_goal = next_queued
-
-                # Now we need to just point towards "new_goal". Find the angle change required to do it:
-                required_d_theta = (find_angle(self.position, new_goal) - self.direction) % 360
-
-                # Determine needed steering direction
-
-                steer_required = None
-                if (required_d_theta > 359 or required_d_theta < 1):
-                    steer_required = 0
-                else:
-                    if required_d_theta > 180:
-                        # Need to turn right
-                        steer_required = 0.4
-                    else:
-                        steer_required = -0.4
-
-                self.events.append(Event(STEER, steer_required, time=(t + 1)))
-                #self.turn = steer_required
-
-
-            elif track_target_queue.target_dict[0][1] == HAIRPIN_APEX:
-                pass
-            elif track_target_queue.target_dict[0][1] == HAIRPIN_EXIT:
-                pass
+            if track_target_queue.get_queue_size() == 0:
+                # No more events to process
+                continue
             else:
-                # It's some other kind of turn
-                pass
+                if track_target_queue.target_dict[0][1] == TURN_PREPARE:
+                    if find_distance(self.position, next_queued) < 0.05:
+                        # We've already basically hit the point, move on to the next one
+                        track_target_queue.pop_target()
+                        continue
 
+                    # Look for the next item in the queue, so we can arrive already lined up with it
+                    next_target = track_target_queue.peek_target(1)
+
+                    # Get direction angle to the next target
+                    new_bearing = find_angle(next_queued, next_target)
+                    # So we need to be coming into this point with that angle
+                    (this_x_unit, this_y_unit) = angle_to_units(new_bearing)
+
+                    # Turn towards a point on that line
+                    # We need to make a list of points that occur on the line, then find the closest point
+                    spaced_points = []
+                    other_side = Point(next_queued.get_x() - (10 * this_x_unit), next_queued.get_y() - (10 * this_y_unit))
+
+                    # Draw a whole bunch of evenly-spaced points between these 2 points
+                    dx = next_queued.get_x() - other_side.get_x()
+                    dy = next_queued.get_y() - other_side.get_y()
+                    numsteps = 100
+                    for teeny in range(numsteps):
+                        mx = teeny * (1 / numsteps)
+                        spaced_points.append(Point(other_side.get_x() + (mx * dx), other_side.get_y() + (mx * dy)))
+
+                    closest_point = None
+                    other_closest_distance = None
+                    for tiny in spaced_points:
+                        if other_closest_distance is None:
+                            closest_point = tiny
+                            other_closest_distance = find_distance(tiny, self.position)
+                        else:
+                            this_dist = find_distance(tiny, self.position)
+                            if this_dist < other_closest_distance:
+                                closest_point = tiny
+                                other_closest_distance = this_dist
+                    new_goal = cone_pair_midpoint(closest_point, next_queued)
+
+                    # Now we need to just point towards "new_goal". Find the angle change required to do it:
+                    required_d_theta = find_angle(self.position, new_goal) - self.direction
+
+                    # Determine needed steering direction
+
+                    steer_required = None
+                    if (required_d_theta > 355 or required_d_theta < 5):
+                        steer_required = 0
+                    else:
+                        if required_d_theta > 180:
+                            # Need to turn right
+                            steer_required = 0.4
+                        else:
+                            steer_required = -0.4
+
+                    self.events.append(Event(STEER, steer_required, time=(t + 1)))
+                    #self.turn = steer_required
+
+                elif track_target_queue.target_dict[0][1] == HAIRPIN_ENTER:
+                    if find_distance(self.position, next_queued) < 0.05:
+                        # We've already basically hit the point, move on to the next one
+                        track_target_queue.pop_target()
+                        continue
+
+                    new_goal = next_queued
+
+                    # Now we need to just point towards "new_goal". Find the angle change required to do it:
+                    required_d_theta = (find_angle(self.position, new_goal) - self.direction) % 360
+
+                    # Determine needed steering direction
+
+                    steer_required = None
+                    if (required_d_theta > 359 or required_d_theta < 1):
+                        steer_required = 0
+                    else:
+                        if required_d_theta > 180:
+                            # Need to turn right
+                            steer_required = 0.4
+                        else:
+                            steer_required = -0.4
+
+                    self.events.append(Event(STEER, steer_required, time=(t + 1)))
+                    #self.turn = steer_required
+
+                elif track_target_queue.target_dict[0][1] == HAIRPIN_APEX:
+                    if find_distance(self.position, next_queued) < 0.05:
+                        # We've already basically hit the point, move on to the next one
+                        track_target_queue.pop_target()
+                        continue
+                    self.events.append(Event(BRAKE, 0.69, time=(t + 1)))
+
+                    # Look for the next item in the queue, so we can arrive already lined up with it
+                    next_target = track_target_queue.peek_target(1)
+
+                    # Get direction angle to the next target
+                    new_bearing = find_angle(next_queued, next_target)
+                    # So we need to be coming into this point with that angle
+                    (this_x_unit, this_y_unit) = angle_to_units(new_bearing)
+
+                    # Turn towards a point on that line
+                    # We need to make a list of points that occur on the line, then find the closest point
+                    spaced_points = []
+                    other_side = Point(next_queued.get_x() - (10 * this_x_unit), next_queued.get_y() - (10 * this_y_unit))
+
+                    (my_unit_x, my_unit_y) = angle_to_units(self.direction)
+                    very_me = Point(self.position.get_x() + (100 * my_unit_x),
+                                    self.position.get_y() + (100 * my_unit_y))
+
+                    intersect_goal = get_segment_intersection(next_queued, other_side, self.position, very_me)
+                    if intersect_goal is None:
+                        intersect_goal = next_queued
+                    distance_to_goal = find_distance(self.position, intersect_goal)
+
+                    dummy1235 = 345
+
+                    new_dx = next_queued.get_x() - intersect_goal.get_x()
+                    new_dy = next_queued.get_y() - intersect_goal.get_y()
+
+                    if distance_to_goal > 1.8:
+                        a_position = 0.25
+                    else:
+                        a_position = 0.16
+
+                    new_goal = Point(intersect_goal.get_x() + (a_position * new_dx), intersect_goal.get_y() + (a_position * new_dy))
+                    #new_goal = cone_pair_midpoint(intersect_goal, next_queued)
+
+                    # Now we need to just point towards "new_goal". Find the angle change required to do it:
+                    required_d_theta = find_angle(self.position, new_goal) - self.direction
+
+                    # Determine needed steering direction
+
+                    steer_required = None
+                    if (required_d_theta > 355 or required_d_theta < 5):
+                        steer_required = 0
+                    else:
+                        if required_d_theta > 180:
+                            # Need to turn right
+                            steer_required = 0.35
+                        else:
+                            steer_required = -0.35
+
+                    self.events.append(Event(STEER, steer_required, time=(t + 1)))
+                    asdf=1234
+
+                elif track_target_queue.target_dict[0][1] == HAIRPIN_EXIT:
+                    if find_distance(self.position, next_queued) < 0.05:
+                        # We've already basically hit the point, move on to the next one
+                        track_target_queue.pop_target()
+                        continue
+                    # Now we're out of the hairpin apex. off the brakes and pin the throttle
+                    self.events.append(Event(BRAKE, 0, time=(t + 1)))
+                    self.events.append(Event(THROTTLE, 1, time=(t + 1)))
+
+                    new_goal = next_queued
+                    #new_goal = cone_pair_midpoint(intersect_goal, next_queued)
+
+                    # Now we need to just point towards "new_goal". Find the angle change required to do it:
+                    required_d_theta = (find_angle(self.position, new_goal) - self.direction) % 360
+
+                    # Determine needed steering direction
+
+                    steer_required = None
+                    if (required_d_theta > 355 or required_d_theta < 5):
+                        steer_required = 0
+                    else:
+                        if required_d_theta > 180:
+                            # Need to turn right
+                            steer_required = 0.3
+                        else:
+                            steer_required = -0.3
+
+                    self.events.append(Event(STEER, steer_required, time=(t + 1)))
+
+                else:
+                    # It's some other kind of turn
+                    pass
 
         return path_points
 
@@ -1255,6 +1390,36 @@ def task1():
     # Plot out existing tracks
     plt.scatter(CX1, CY1, c=CC1)
 
+    blue_points = []
+    yellow_points = []
+
+    for i in cones:
+        blue_points.append(cones[i][0])
+        yellow_points.append(cones[i][1])
+
+    inside_list_x = []
+    inside_list_y = []
+    outside_list_x = []
+    outside_list_y = []
+
+    for i in blue_points:
+        inside_list_x.append(i.get_x())
+        inside_list_y.append(i.get_y())
+    inside_list_x.append(blue_points[0].get_x())
+    inside_list_y.append(blue_points[0].get_y())
+
+    for i in yellow_points:
+        outside_list_x.append(i.get_x())
+        outside_list_y.append(i.get_y())
+
+    outside_list_x.append(yellow_points[0].get_x())
+    outside_list_y.append(yellow_points[0].get_y())
+
+    plt.plot(inside_list_x, inside_list_y)
+    plt.plot(outside_list_x, outside_list_y)
+
+
+
     # Plot our midpoints
     plt.plot(xList, yList, '-o')
     plt.axis('equal')
@@ -1271,6 +1436,40 @@ def task2():
     midpoints = get_track_midpoints(cones)
 
     (x_mids, y_mids, colour_mids) = get_point_list(midpoints)
+
+    blue_points = []
+    yellow_points = []
+
+    for i in cones:
+        blue_points.append(cones[i][0])
+        yellow_points.append(cones[i][1])
+
+    temp = blue_points[0]
+    blue_points[0] = yellow_points[0]
+    yellow_points[0] = temp
+
+    inside_list_x = []
+    inside_list_y = []
+    outside_list_x = []
+    outside_list_y = []
+
+    for i in blue_points:
+        inside_list_x.append(i.get_x())
+        inside_list_y.append(i.get_y())
+    inside_list_x.append(blue_points[0].get_x())
+    inside_list_y.append(blue_points[0].get_y())
+
+    for i in yellow_points:
+        outside_list_x.append(i.get_x())
+        outside_list_y.append(i.get_y())
+
+    outside_list_x.append(yellow_points[0].get_x())
+    outside_list_y.append(yellow_points[0].get_y())
+
+    plt.plot(inside_list_x, inside_list_y)
+    plt.plot(outside_list_x, outside_list_y)
+
+
 
     plt.scatter(CX2, CY2, c=CC2)
 
@@ -1298,7 +1497,7 @@ def curve():
     initial_events = [Event(THROTTLE, 1.0, time=0)]
     racing_curve = RacingCurve(midpoints[0], midpoints=midpoints, starting_angle=0, events=initial_events,
                                inner_bounds=blue_points, outer_bounds=yellow_points)
-    curve_points = racing_curve.get_path(t_start=0, t_end=150)
+    curve_points = racing_curve.get_path(t_start=0, t_end=250)
     curve_points_list = list(curve_points.values())
 
     (x_list, y_list, colour_list) = get_point_list(curve_points)
@@ -1315,14 +1514,21 @@ def curve():
     for i in blue_points:
         inside_list_x.append(i.get_x())
         inside_list_y.append(i.get_y())
+    inside_list_x.append(blue_points[0].get_x())
+    inside_list_y.append(blue_points[0].get_y())
+
     for i in yellow_points:
         outside_list_x.append(i.get_x())
         outside_list_y.append(i.get_y())
+
+    outside_list_x.append(yellow_points[0].get_x())
+    outside_list_y.append(yellow_points[0].get_y())
 
     #plt.plot(x_mids, y_mids, '-o')
     plt.scatter(CX1, CY1, c=CC1)
     plt.plot(inside_list_x, inside_list_y)
     plt.plot(outside_list_x, outside_list_y)
+
     plt.plot(x_list, y_list, 'o-')
     plt.axis([-0.1, 5.1, -1, 3])
     plt.show()

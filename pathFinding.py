@@ -42,6 +42,8 @@ FINISH_LINE = 7
 HAIRPIN_ENTER = 8
 HAIRPIN_APEX = 9
 HAIRPIN_EXIT = 10
+TURN_PREPARE = 11
+STEER = 12
 
 # Turn classifications
 RIGHT_ANGLE = 0
@@ -123,6 +125,27 @@ class TargetQueue:
                 return retval
         else:
             return None
+
+    def peek_target(self, index):
+        """
+        Returns the value at a given index. Does not remove it.
+        This also supports negative integers for returning items at the end of the list, to be more Pythonic
+
+        :param index: Index of target (negative numbers permitted for returning from end of list)
+        :return: Target at that index. Returns none if index is invalid
+        """
+        if index < 0:
+            if (index * -1) <= self.queue_length:
+                # Valid negative index, start from the other side of the list (i.e. index -1 gives the last element)
+                return self.target_dict[self.queue_length + index][0]
+            else:
+                return
+        else :
+            if index < self.queue_length:
+                # Valid positive index
+                return self.target_dict[index][0]
+            else:
+                return
 
 
 class Waypoint:
@@ -307,6 +330,12 @@ class RacingCurve:
         # Car's direction (0 - 360 degrees with respect to +x axis)
         self.direction = 0.0
 
+        # Car's current "turning effort". 1 for max right, -1 for max left
+        self.turn = 0.0
+
+        # Car's steering sensitivity
+        self.turn_sensitivity = 0.0005
+
         # Car's current speed (in direction of motion)
         self.speed = 0.0
 
@@ -317,7 +346,7 @@ class RacingCurve:
         self.throttle = 0.0
 
         # Throttle sensitivity
-        self.throttle_sensitivity = 0.001
+        self.throttle_sensitivity = 0.005
 
         # Braking amount (deceleration)
         self.brake = 0.0
@@ -360,7 +389,7 @@ class RacingCurve:
         if events is not None:
             self.events = events
         else:
-            self.events = 0
+            self.events = []
 
     def get_path(self, t_start=None, t_end=None):
         """
@@ -375,11 +404,12 @@ class RacingCurve:
 
         # Mark out important events
         # TESTING - mark out midpoints[3]
-        dummy_waypoint = Waypoint(Point(3.5, 0.7), inner_bounds=self.inner_bounds, outer_bounds=self.outer_bounds,
-                                  event=Event(TURN_START, value=0), midpoints=self.midpoints)
+        #dummy_waypoint = Waypoint(Point(3.5, 0.7), inner_bounds=self.inner_bounds, outer_bounds=self.outer_bounds,
+        #                          event=Event(TURN_START, value=0), midpoints=self.midpoints)
 
-        plt.plot([dummy_waypoint.get_waypoint_bounds()[0].get_x(), dummy_waypoint.get_waypoint_bounds()[1].get_x()],
-                 [dummy_waypoint.get_waypoint_bounds()[0].get_y(), dummy_waypoint.get_waypoint_bounds()[1].get_y()])
+
+        #plt.plot([dummy_waypoint.get_waypoint_bounds()[0].get_x(), dummy_waypoint.get_waypoint_bounds()[1].get_x()],
+        #         [dummy_waypoint.get_waypoint_bounds()[0].get_y(), dummy_waypoint.get_waypoint_bounds()[1].get_y()])
 
         # Pass 1: Detecting turns
         # Follow the track midpoints around and detect changes in angle indicative of turns
@@ -448,13 +478,8 @@ class RacingCurve:
                 # We have an S-shaped curve
                 turn_classes[i] = (S_CURVE, turns[i][0])
 
-        # RIGHT_ANGLE = 0
-        # DOUBLE_APEX = 1
-        # HAIRPIN = 2
-        # S_CURVE = 3
-        # INCREASING_RADIUS = 4
-        # DECREASING_RADIUS = 5
         # Now we go through and decide what to do for each waypoint
+        raw_queue = TargetQueue()
         for i in turn_classes:
             if turn_classes[i][0] == RIGHT_ANGLE:
                 # Process right-angle turn
@@ -522,7 +547,6 @@ class RacingCurve:
                         entry_point.set_x(new_x)
                         entry_point.set_y(new_y)
                         plt.scatter([entry_point.get_x()], [entry_point.get_y()], marker='x')
-
                         break
                     else:
                         # This is not the intersection interval. Keep looking
@@ -555,6 +579,15 @@ class RacingCurve:
 
                 plt.scatter([exit_point.get_x()], [exit_point.get_y()], marker='*')
 
+                # Now that we have the three points, we add these to a queue
+                # And then these queues are added to a master queue
+                sub_queue = TargetQueue()
+                sub_queue.append_target(entry_point, classification=HAIRPIN_ENTER)
+                sub_queue.append_target(apex_point, classification=HAIRPIN_APEX)
+                sub_queue.append_target(exit_point, classification=HAIRPIN_EXIT)
+
+                raw_queue.append_target(sub_queue)
+
                 dummy456789 = 42
 
             elif turn_classes[i][0] == S_CURVE:
@@ -568,9 +601,70 @@ class RacingCurve:
                 pass
             else:
                 pass
-        dummy456 = 123
-        path_points = {}
 
+        # Now we've got a queue of queues of targets. We now need to work out preparations for each event
+        # Finding the index of the closest midpoint
+
+        # Iterate over the "master" queue
+        for i in range(raw_queue.get_queue_size()):
+            this_queue = raw_queue.peek_target(i)
+
+            # Then get the first item in the queue
+            this_point = None
+            if isinstance(this_queue, TargetQueue):
+                this_point = this_queue.peek_target(0)
+            else:
+                print("not a queue")
+
+            # Now we have the first point of this sequence, find its closest midpoint
+            closest_distance = None
+            closest_index = None
+            for j in range(len(self.midpoints)):
+                if closest_index is None:
+                    # For the first run through
+                    closest_index = j
+                    closest_distance = find_distance(this_point, self.midpoints[j])
+                else:
+                    # For following runs through
+                    local_distance = find_distance(this_point, self.midpoints[j])
+                    if local_distance < closest_distance:
+                        # We have found an even closer midpoint
+                        closest_index = j
+                        closest_distance = local_distance
+
+            midpoint_ahead = self.midpoints[closest_index]
+            midpoint_behind = self.midpoints[closest_index - 1]
+
+            # Then find unit vectors from midpoint_ahead to midpoint_behind (opposite direction to track driving)
+            turn_leading_unit_x = midpoint_behind.get_x() - midpoint_ahead.get_x()
+            turn_leading_unit_y = midpoint_behind.get_y() - midpoint_ahead.get_y()
+            turn_leading_mag = math.sqrt((turn_leading_unit_x ** 2) + (turn_leading_unit_y ** 2))
+            turn_leading_unit_x *= (1 / turn_leading_mag)
+            turn_leading_unit_y *= (1 / turn_leading_mag)
+            turn_prep_distance = 1
+
+            # Next, we need to place a point a bit before the turn to prepare for it and line up
+            prep_target = Point(this_point.get_x() + turn_leading_unit_x,
+                                 this_point.get_y() + turn_leading_unit_y)
+
+            plt.scatter([prep_target.get_x()], [prep_target.get_y()], marker='X')
+
+            this_queue.add_target(0, prep_target, classification=TURN_PREPARE)
+
+            meme435 = 35
+
+        dummy456 = 123
+
+        track_target_queue = TargetQueue()
+        for i in range(raw_queue.get_queue_size()):
+            popped = raw_queue.pop_target()
+            for j in range(popped[0].get_queue_size()):
+                last_target = popped[0].pop_target()
+                track_target_queue.append_target(last_target[0], classification=last_target[1])
+                emme13 = 234
+
+
+        path_points = {}
         current_events = []
         # Go through each t value in the linspace
         for t in range(t_start, t_end):
@@ -583,9 +677,25 @@ class RacingCurve:
                 self.speed = self.MAX_SPEED
 
             # 2: Determine new position
+            # Determine change in heading (from steering)
+            # This is a constant, mu * g
+            turn_radius_constant = 20
+
+            # Calculate max turn radius = v^2 / mu * g
+            max_turn_radius = (self.speed ** 2) / turn_radius_constant
             (x_unit, y_unit) = angle_to_units(self.direction)
             x_unit *= self.speed
             y_unit *= self.speed
+
+            delta_position = math.sqrt((x_unit ** 2) + (y_unit ** 2))
+
+            # Avoid divide by 0
+            if max_turn_radius == 0:
+                max_turn_degrees = 0
+            else:
+                max_turn_degrees = math.degrees(delta_position / max_turn_radius)
+
+            self.direction = (self.direction + ((self.turn * -1 * self.turn_sensitivity) * max_turn_degrees)) % 360
 
             self.position = Point(self.position.get_x() + x_unit,
                                   self.position.get_y() + y_unit)
@@ -613,9 +723,105 @@ class RacingCurve:
                             # Process brake engage
                             self.brake = j.get_value()
                             self.throttle = 0
+                        if j.get_event_type() == STEER:
+                            self.turn = j.get_value()
 
             # 4: Check for important events a bit into the near future
-            # First, check for any important
+            # Get the next queued target
+            next_queued = track_target_queue.peek_target(0)
+            # Check for turning targets
+            if track_target_queue.target_dict[0][1] == TURN_PREPARE:
+                if find_distance(self.position, next_queued) < 0.05:
+                    # We've already basically hit the point, move on to the next one
+                    track_target_queue.pop_target()
+                    continue
+
+                # Look for the next item in the queue, so we can arrive already lined up with it
+                next_target = track_target_queue.peek_target(1)
+
+                # Get direction angle to the next target
+                new_bearing = find_angle(next_queued, next_target)
+                # So we need to be coming into this point with that angle
+                (this_x_unit, this_y_unit) = angle_to_units(new_bearing)
+
+                # Turn towards a point on that line
+                # We need to make a list of points that occur on the line, then find the closest point
+                spaced_points = []
+                other_side = Point(next_queued.get_x() - (10 * this_x_unit), next_queued.get_y() - (10 * this_y_unit))
+
+                # Draw a whole bunch of evenly-spaced points between these 2 points
+                dx = next_queued.get_x() - other_side.get_x()
+                dy = next_queued.get_y() - other_side.get_y()
+                numsteps = 100
+                for teeny in range(numsteps):
+                    mx = teeny * (1 / numsteps)
+                    spaced_points.append(Point(other_side.get_x() + (mx * dx), other_side.get_y() + (mx * dy)))
+
+                closest_point = None
+                other_closest_distance = None
+                for tiny in spaced_points:
+                    if other_closest_distance is None:
+                        closest_point = tiny
+                        other_closest_distance = find_distance(tiny, self.position)
+                    else:
+                        this_dist = find_distance(tiny, self.position)
+                        if this_dist < other_closest_distance:
+                            closest_point = tiny
+                            other_closest_distance = this_dist
+                new_goal = cone_pair_midpoint(closest_point, next_queued)
+
+                # Now we need to just point towards "new_goal". Find the angle change required to do it:
+                required_d_theta = find_angle(self.position, new_goal) - self.direction
+
+                # Determine needed steering direction
+
+                steer_required = None
+                if (required_d_theta > 355 or required_d_theta < 5):
+                    steer_required = 0
+                else:
+                    if required_d_theta > 180:
+                        # Need to turn right
+                        steer_required = 0.4
+                    else:
+                        steer_required = -0.4
+
+                self.events.append(Event(STEER, steer_required, time=(t + 1)))
+                #self.turn = steer_required
+
+            elif track_target_queue.target_dict[0][1] == HAIRPIN_ENTER:
+                if find_distance(self.position, next_queued) < 0.05:
+                    # We've already basically hit the point, move on to the next one
+                    track_target_queue.pop_target()
+                    continue
+                new_goal = next_queued
+
+                # Now we need to just point towards "new_goal". Find the angle change required to do it:
+                required_d_theta = (find_angle(self.position, new_goal) - self.direction) % 360
+
+                # Determine needed steering direction
+
+                steer_required = None
+                if (required_d_theta > 359 or required_d_theta < 1):
+                    steer_required = 0
+                else:
+                    if required_d_theta > 180:
+                        # Need to turn right
+                        steer_required = 0.4
+                    else:
+                        steer_required = -0.4
+
+                self.events.append(Event(STEER, steer_required, time=(t + 1)))
+                #self.turn = steer_required
+
+
+            elif track_target_queue.target_dict[0][1] == HAIRPIN_APEX:
+                pass
+            elif track_target_queue.target_dict[0][1] == HAIRPIN_EXIT:
+                pass
+            else:
+                # It's some other kind of turn
+                pass
+
 
         return path_points
 
@@ -902,8 +1108,7 @@ def sort_points(listx, listy, colours):
         #print(cone_bearings[i])
 
     for i in yellow_cones:
-        cone_bearings_yellow[i] = find_angle(centre_point, i
-                                             )
+        cone_bearings_yellow[i] = find_angle(centre_point, i)
 
     # Now, we normalise the angles to start at 0 at the starting cone, then ascend anti-clockwise
     # Formula: angle += [(360 - start_angle) + angle] % 360
@@ -1093,7 +1298,7 @@ def curve():
     initial_events = [Event(THROTTLE, 1.0, time=0)]
     racing_curve = RacingCurve(midpoints[0], midpoints=midpoints, starting_angle=0, events=initial_events,
                                inner_bounds=blue_points, outer_bounds=yellow_points)
-    curve_points = racing_curve.get_path(t_start=0, t_end=70)
+    curve_points = racing_curve.get_path(t_start=0, t_end=150)
     curve_points_list = list(curve_points.values())
 
     (x_list, y_list, colour_list) = get_point_list(curve_points)
@@ -1102,8 +1307,22 @@ def curve():
 
     x = np.linspace(0, 2*np.pi, 100)
 
-    plt.plot(x_mids, y_mids, '-o')
+    inside_list_x = []
+    inside_list_y = []
+    outside_list_x = []
+    outside_list_y = []
+
+    for i in blue_points:
+        inside_list_x.append(i.get_x())
+        inside_list_y.append(i.get_y())
+    for i in yellow_points:
+        outside_list_x.append(i.get_x())
+        outside_list_y.append(i.get_y())
+
+    #plt.plot(x_mids, y_mids, '-o')
     plt.scatter(CX1, CY1, c=CC1)
+    plt.plot(inside_list_x, inside_list_y)
+    plt.plot(outside_list_x, outside_list_y)
     plt.plot(x_list, y_list, 'o-')
     plt.axis([-0.1, 5.1, -1, 3])
     plt.show()

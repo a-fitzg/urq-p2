@@ -1,7 +1,5 @@
 ##   UQR DV New Member pathFinding task
-##   code written by: Mitchell Anderson
-##                    mitchell.anderson@uqracing.com
-##   code mangled by: Alexander FitzGerald
+##   code written by: Alexander FitzGerald
 ##                    xanderfitzg2000@gmail.com
 
 
